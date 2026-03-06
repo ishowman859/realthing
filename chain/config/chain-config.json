@@ -1,0 +1,65 @@
+{
+  "chain": {
+    "name": "Verity Chain",
+    "ticker": "VRT",
+    "chain_id": "verity-mainnet-1",
+    "version": "0.1.0"
+  },
+  "consensus": {
+    "type": "tower-bft",
+    "tick_duration_ms": 6,
+    "ticks_per_slot": 32,
+    "slots_per_epoch": 432000,
+    "target_slot_time_ms": 200,
+    "warmup_epochs": 2
+  },
+  "fees": {
+    "lamports_per_signature": 500,
+    "fee_burn_percentage": 50,
+    "rent_burn_percentage": 100
+  },
+  "token": {
+    "name": "Verity Token",
+    "symbol": "VRT",
+    "decimals": 9,
+    "initial_supply": 1000000000,
+    "distribution": {
+      "validator_rewards_pool": 0.30,
+      "ecosystem_fund": 0.25,
+      "team_and_development": 0.15,
+      "community_airdrop": 0.10,
+      "liquidity_bridge": 0.10,
+      "treasury": 0.10
+    }
+  },
+  "inflation": {
+    "initial_rate": 0.04,
+    "terminal_rate": 0.015,
+    "taper_rate": 0.15
+  },
+  "validators": {
+    "min_stake": 10000,
+    "max_validators": 100,
+    "initial_validators": 3,
+    "permissioned": true
+  },
+  "programs": {
+    "photo_hash": {
+      "description": "Core pHash registration program",
+      "privileged": true
+    },
+    "bridge": {
+      "description": "SOL <-> VRT bridge program",
+      "privileged": true
+    },
+    "governance": {
+      "description": "On-chain governance for chain parameters",
+      "privileged": true
+    }
+  },
+  "rpc": {
+    "default_port": 8899,
+    "websocket_port": 8900,
+    "max_request_body_size": 52428800
+  }
+}

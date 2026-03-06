@@ -1,0 +1,65 @@
+version: "3.8"
+
+services:
+  # ── Verity Chain Validator Node ──
+  validator:
+    image: solanalabs/solana:v1.18
+    container_name: vrt-validator
+    ports:
+      - "8899:8899"   # RPC
+      - "8900:8900"   # WebSocket
+      - "8001:8001"   # Gossip
+    volumes:
+      - validator-ledger:/ledger
+      - ./keys:/keys:ro
+      - ./config:/config:ro
+      - ../target/deploy:/programs:ro
+    environment:
+      - RUST_LOG=solana_runtime::system_instruction_processor=trace,solana_runtime::message_processor=info
+    command: >
+      solana-test-validator
+        --rpc-port 8899
+        --rpc-bind-address 0.0.0.0
+        --ticks-per-slot 32
+        --slots-per-epoch 432000
+        --limit-ledger-size 50000000
+        --ledger /ledger
+        --log /ledger/validator.log
+        --reset
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "solana", "cluster-version", "--url", "http://localhost:8899"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── RPC Proxy / Load Balancer ──
+  rpc-proxy:
+    image: nginx:alpine
+    container_name: vrt-rpc-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      validator:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Block Explorer (optional) ──
+  explorer:
+    image: nicholasgasior/solana-explorer:latest
+    container_name: vrt-explorer
+    ports:
+      - "3000:3000"
+    environment:
+      - RPC_URL=http://validator:8899
+    depends_on:
+      validator:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  validator-ledger:
+    driver: local

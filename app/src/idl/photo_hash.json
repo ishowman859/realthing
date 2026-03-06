@@ -1,0 +1,99 @@
+{
+  "version": "0.1.0",
+  "name": "photo_hash",
+  "instructions": [
+    {
+      "name": "registerPhoto",
+      "accounts": [
+        {
+          "name": "photoRecord",
+          "isMut": true,
+          "isSigner": false
+        },
+        {
+          "name": "owner",
+          "isMut": true,
+          "isSigner": true
+        },
+        {
+          "name": "systemProgram",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "phash",
+          "type": "string"
+        },
+        {
+          "name": "imageUri",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "verifyPhoto",
+      "accounts": [
+        {
+          "name": "photoRecord",
+          "isMut": false,
+          "isSigner": false
+        }
+      ],
+      "args": [
+        {
+          "name": "phash",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "PhotoRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          { "name": "owner", "type": "publicKey" },
+          { "name": "phash", "type": "string" },
+          { "name": "imageUri", "type": "string" },
+          { "name": "timestamp", "type": "i64" },
+          { "name": "bump", "type": "u8" }
+        ]
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "PhotoRegistered",
+      "fields": [
+        { "name": "owner", "type": "publicKey", "index": false },
+        { "name": "phash", "type": "string", "index": false },
+        { "name": "timestamp", "type": "i64", "index": false }
+      ]
+    },
+    {
+      "name": "PhotoVerified",
+      "fields": [
+        { "name": "owner", "type": "publicKey", "index": false },
+        { "name": "storedPhash", "type": "string", "index": false },
+        { "name": "queryPhash", "type": "string", "index": false },
+        { "name": "isMatch", "type": "bool", "index": false },
+        { "name": "registeredAt", "type": "i64", "index": false }
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "PhashTooLong",
+      "msg": "pHash value exceeds maximum length of 128 characters"
+    },
+    {
+      "code": 6001,
+      "name": "UriTooLong",
+      "msg": "Image URI exceeds maximum length of 256 characters"
+    }
+  ]
+}

@@ -1,0 +1,898 @@
+import React, { useRef, useState } from "react";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  SafeAreaView,
+  Image,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  Share,
+  Linking,
+} from "react-native";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import { Ionicons } from "@expo/vector-icons";
+import { RegistrationStatus } from "../hooks/useVerityHash";
+import {
+  FirstStageFilterResult,
+  runFirstStageFilter,
+} from "../utils/firstStageFilter";
+import { HashMode } from "../utils/verityApi";
+
+type ShareVariant = "original" | "proved";
+interface CaptureContext {
+  captureTimestamp: number;
+  gps: { lat: number; lng: number } | null;
+}
+
+interface CameraScreenProps {
+  status: RegistrationStatus;
+  currentPhash: string | null;
+  currentSha256: string | null;
+  txSignature: string | null;
+  verificationUrl: string | null;
+  qrCodeUrl: string | null;
+  hashMode: HashMode | null;
+  error: string | null;
+  onRegisterPhoto: (
+    uri: string,
+    mode: HashMode,
+    aiRiskScore?: number,
+    metadata?: Record<string, unknown>
+  ) => Promise<any>;
+  onReset: () => void;
+  onBack: () => void;
+}
+
+const STATUS_LABELS: Record<RegistrationStatus, string> = {
+  idle: "",
+  computing_hash: "pHash / SHA-256 계산 중...",
+  building_tx: "트랜잭션 생성 중...",
+  awaiting_signature: "지갑 서명 대기 중...",
+  confirming: "블록체인 확인 중...",
+  success: "등록 완료!",
+  error: "오류 발생",
+};
+
+export default function CameraScreen({
+  status,
+  currentPhash,
+  currentSha256,
+  txSignature,
+  verificationUrl,
+  qrCodeUrl,
+  hashMode,
+  error,
+  onRegisterPhoto,
+  onReset,
+  onBack,
+}: CameraScreenProps) {
+  const cameraRef = useRef<CameraView>(null);
+  const [permission, requestPermission] = useCameraPermissions();
+  const [capturedUri, setCapturedUri] = useState<string | null>(null);
+  const [captureContext, setCaptureContext] = useState<CaptureContext | null>(null);
+  const [facing, setFacing] = useState<"front" | "back">("back");
+  const [filterResult, setFilterResult] = useState<FirstStageFilterResult | null>(
+    null
+  );
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [selectedShareVariant, setSelectedShareVariant] =
+    useState<ShareVariant>("proved");
+
+  if (!permission) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#9945ff" />
+      </View>
+    );
+  }
+
+  if (!permission.granted) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.centered}>
+          <Ionicons name="camera-outline" size={64} color="#555" />
+          <Text style={styles.permissionText}>
+            카메라 접근 권한이 필요합니다
+          </Text>
+          <TouchableOpacity
+            style={styles.permissionButton}
+            onPress={requestPermission}
+          >
+            <Text style={styles.permissionButtonText}>권한 허용</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const takePicture = async () => {
+    if (!cameraRef.current) return;
+
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.8,
+        base64: false,
+        exif: true,
+      });
+
+      if (photo?.uri) {
+        setCapturedUri(photo.uri);
+        setCaptureContext({
+          captureTimestamp: Date.now(),
+          gps: extractGpsFromExif(photo.exif),
+        });
+        setFilterResult(null);
+        setIsAnalyzing(true);
+        try {
+          const result = await runFirstStageFilter(photo.uri);
+          setFilterResult(result);
+        } catch {
+          setFilterResult({
+            decision: "warn",
+            score: 40,
+            reasons: ["1차 필터 분석에 실패해 보수적으로 재촬영을 권장합니다."],
+            metrics: {
+              blurVariance: 0,
+              periodicityScore: 0,
+              metadataRisk: 0,
+            },
+          });
+        } finally {
+          setIsAnalyzing(false);
+        }
+      }
+    } catch (err) {
+      Alert.alert("오류", "사진 촬영에 실패했습니다");
+    }
+  };
+
+  const handleRegister = async (mode: HashMode) => {
+    if (!capturedUri) return;
+
+    if (isAnalyzing) {
+      Alert.alert("검증 중", "사진 검증이 끝난 뒤 등록할 수 있습니다.");
+      return;
+    }
+
+    if (filterResult?.decision === "reject") {
+      Alert.alert(
+        "재촬영 필요",
+        "화면 재촬영 의심 신호가 강해 등록을 막았습니다. 다른 각도/거리에서 다시 촬영해주세요."
+      );
+      return;
+    }
+
+    if (filterResult?.decision === "warn") {
+      const message =
+        filterResult.reasons.length > 0
+          ? filterResult.reasons.join("\n")
+          : "재촬영 의심 신호가 일부 감지되었습니다.";
+      Alert.alert("주의", `${message}\n\n그래도 등록을 진행할까요?`, [
+        { text: "다시 촬영", style: "cancel" },
+        {
+          text: "계속 진행",
+          style: "default",
+          onPress: () => {
+            void onRegisterPhoto(
+              capturedUri,
+              mode,
+              filterResult?.score,
+              {
+                blurVariance: filterResult?.metrics.blurVariance ?? null,
+                periodicityScore: filterResult?.metrics.periodicityScore ?? null,
+                metadataRisk: filterResult?.metrics.metadataRisk ?? null,
+                captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
+                gps: captureContext?.gps ?? null,
+              }
+            );
+          },
+        },
+      ]);
+      return;
+    }
+
+    await onRegisterPhoto(capturedUri, mode, filterResult?.score, {
+      blurVariance: filterResult?.metrics.blurVariance ?? null,
+      periodicityScore: filterResult?.metrics.periodicityScore ?? null,
+      metadataRisk: filterResult?.metrics.metadataRisk ?? null,
+      captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
+      gps: captureContext?.gps ?? null,
+    });
+  };
+
+  const handleRetake = () => {
+    setCapturedUri(null);
+    setFilterResult(null);
+    setIsAnalyzing(false);
+    setCaptureContext(null);
+    setSelectedShareVariant("proved");
+    onReset();
+  };
+
+  const isProcessing =
+    status === "computing_hash" ||
+    status === "building_tx" ||
+    status === "awaiting_signature" ||
+    status === "confirming";
+
+  const handleShare = async () => {
+    if (!verificationUrl) return;
+    await Share.share({
+      message: `proved by verity\n선택한 공유 스타일: ${
+        selectedShareVariant === "proved" ? "PROVED 테두리" : "원본"
+      }\n검증 링크: ${verificationUrl}`,
+    });
+  };
+
+  const handleShareQr = async () => {
+    if (!qrCodeUrl) return;
+    await Share.share({
+      message: `verity 검증 QR\n${verificationUrl ?? ""}\n${qrCodeUrl}`,
+      url: qrCodeUrl,
+    });
+  };
+
+  // 촬영 완료 후 결과/등록 화면
+  if (capturedUri) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={onBack} disabled={isProcessing}>
+            <Ionicons name="arrow-back" size={28} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.topBarTitle}>사진 등록</Text>
+          <View style={{ width: 28 }} />
+        </View>
+
+        <ScrollView
+          contentContainerStyle={styles.previewContainer}
+          bounces={false}
+        >
+          <View style={styles.variantSelector}>
+            <TouchableOpacity
+              style={[
+                styles.variantCard,
+                selectedShareVariant === "original" && styles.variantCardActive,
+              ]}
+              onPress={() => setSelectedShareVariant("original")}
+            >
+              <Image source={{ uri: capturedUri }} style={styles.variantThumb} />
+              <Text style={styles.variantLabel}>원본</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.variantCard,
+                selectedShareVariant === "proved" && styles.variantCardActive,
+              ]}
+              onPress={() => setSelectedShareVariant("proved")}
+            >
+              <View style={styles.variantThumbProved}>
+                <Image source={{ uri: capturedUri }} style={styles.variantThumb} />
+                <View style={styles.provedBadge}>
+                  <Text style={styles.provedBadgeText}>PROVED BY VERITY</Text>
+                </View>
+              </View>
+              <Text style={styles.variantLabel}>PROVED 테두리</Text>
+            </TouchableOpacity>
+          </View>
+
+          {selectedShareVariant === "original" ? (
+            <Image source={{ uri: capturedUri }} style={styles.previewImage} />
+          ) : (
+            <View style={styles.previewProvedContainer}>
+              <Image source={{ uri: capturedUri }} style={styles.previewImage} />
+              <View style={styles.previewFrame}>
+                <Text style={styles.previewFrameText}>PROVED BY VERITY</Text>
+              </View>
+            </View>
+          )}
+
+          {isAnalyzing && (
+            <View style={styles.filterCard}>
+              <ActivityIndicator size="small" color="#9945ff" />
+              <Text style={styles.filterCardTitle}>1차 필터 검증 중...</Text>
+              <Text style={styles.filterCardDesc}>
+                화면 재촬영 가능성(블러/패턴/메타데이터)을 검사하고 있습니다.
+              </Text>
+            </View>
+          )}
+
+          {!isAnalyzing && filterResult && (
+            <View
+              style={[
+                styles.filterCard,
+                filterResult.decision === "pass"
+                  ? styles.filterPass
+                  : filterResult.decision === "warn"
+                  ? styles.filterWarn
+                  : styles.filterReject,
+              ]}
+            >
+              <Text style={styles.filterCardTitle}>
+                1차 필터 점수: {filterResult.score}/100
+              </Text>
+              <Text style={styles.filterCardDesc}>
+                {filterResult.decision === "pass"
+                  ? "문제 신호가 낮아 등록을 진행할 수 있습니다."
+                  : filterResult.decision === "warn"
+                  ? "의심 신호가 일부 감지되었습니다. 재촬영 권장."
+                  : "의심 신호가 강해 등록이 차단됩니다."}
+              </Text>
+              {filterResult.reasons.slice(0, 2).map((reason) => (
+                <Text key={reason} style={styles.filterReason}>
+                  • {reason}
+                </Text>
+              ))}
+            </View>
+          )}
+
+          {/* 상태 표시 */}
+          {status !== "idle" && (
+            <View style={styles.statusContainer}>
+              {isProcessing && (
+                <ActivityIndicator
+                  size="small"
+                  color="#9945ff"
+                  style={{ marginBottom: 8 }}
+                />
+              )}
+              {status === "success" && (
+                <Ionicons
+                  name="checkmark-circle"
+                  size={32}
+                  color="#14f195"
+                  style={{ marginBottom: 8 }}
+                />
+              )}
+              {status === "error" && (
+                <Ionicons
+                  name="close-circle"
+                  size={32}
+                  color="#ff6b6b"
+                  style={{ marginBottom: 8 }}
+                />
+              )}
+
+              <Text style={styles.statusText}>{STATUS_LABELS[status]}</Text>
+              {hashMode && (
+                <Text style={styles.modeMetaText}>
+                  등록 모드: {hashMode === "sha256" ? "SHA-256" : "pHash"}
+                </Text>
+              )}
+
+              {currentPhash && (
+                <View style={styles.hashContainer}>
+                  <Text style={styles.hashLabel}>pHash</Text>
+                  <Text style={styles.hashValue}>{currentPhash}</Text>
+                </View>
+              )}
+
+              {currentSha256 && (
+                <View style={styles.hashContainer}>
+                  <Text style={styles.hashLabel}>SHA-256</Text>
+                  <Text style={styles.hashValue} numberOfLines={2}>
+                    {currentSha256}
+                  </Text>
+                </View>
+              )}
+
+              {txSignature && (
+                <View style={styles.hashContainer}>
+                  <Text style={styles.hashLabel}>TX Signature</Text>
+                  <Text style={styles.hashValue} numberOfLines={1}>
+                    {txSignature.slice(0, 32)}...
+                  </Text>
+                </View>
+              )}
+
+              {verificationUrl && (
+                <View style={styles.hashContainer}>
+                  <Text style={styles.hashLabel}>검증 URL</Text>
+                  <Text style={styles.hashValue} numberOfLines={1}>
+                    {verificationUrl}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.linkButton}
+                    onPress={() => Linking.openURL(verificationUrl)}
+                  >
+                    <Text style={styles.linkButtonText}>검증 페이지 열기</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {qrCodeUrl && (
+                <View style={styles.hashContainer}>
+                  <Text style={styles.hashLabel}>QR 코드</Text>
+                  <Image source={{ uri: qrCodeUrl }} style={styles.qrImage} />
+                  <TouchableOpacity style={styles.linkButton} onPress={handleShareQr}>
+                    <Text style={styles.linkButtonText}>QR 이미지 공유</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {error && <Text style={styles.errorText}>{error}</Text>}
+            </View>
+          )}
+
+          {/* 버튼 영역 */}
+          <View style={styles.previewButtons}>
+            {status === "idle" && (
+              <>
+                <TouchableOpacity
+                  style={styles.retakeButton}
+                  onPress={handleRetake}
+                >
+                  <Ionicons name="refresh" size={20} color="#fff" />
+                  <Text style={styles.retakeText}>다시 촬영</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.registerButton}
+                  onPress={() => handleRegister("sha256")}
+                >
+                  <Ionicons name="shield-checkmark" size={20} color="#0f0f23" />
+                  <Text style={styles.registerText}>SHA-256 + TEE 루트</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.registerButtonSecondary}
+                  onPress={() => handleRegister("phash")}
+                >
+                  <Ionicons name="images" size={20} color="#fff" />
+                  <Text style={styles.registerTextSecondary}>pHash 루트</Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            {status === "success" && (
+              <>
+                <TouchableOpacity
+                  style={styles.retakeButton}
+                  onPress={handleRetake}
+                >
+                  <Ionicons name="camera" size={20} color="#fff" />
+                  <Text style={styles.retakeText}>새 사진 촬영</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.doneButton} onPress={onBack}>
+                  <Text style={styles.doneText}>완료</Text>
+                </TouchableOpacity>
+
+                {!!verificationUrl && (
+                  <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+                    <Ionicons name="share-social" size={18} color="#fff" />
+                    <Text style={styles.doneText}>
+                      {selectedShareVariant === "proved"
+                        ? "PROVED 버전 공유"
+                        : "원본 공유"}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </>
+            )}
+
+            {status === "error" && (
+              <>
+                <TouchableOpacity
+                  style={styles.retakeButton}
+                  onPress={handleRetake}
+                >
+                  <Ionicons name="refresh" size={20} color="#fff" />
+                  <Text style={styles.retakeText}>다시 시도</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
+  // 카메라 뷰
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={onBack}>
+          <Ionicons name="arrow-back" size={28} color="#fff" />
+        </TouchableOpacity>
+        <Text style={styles.topBarTitle}>사진 촬영</Text>
+        <TouchableOpacity
+          onPress={() => setFacing((f) => (f === "back" ? "front" : "back"))}
+        >
+          <Ionicons name="camera-reverse" size={28} color="#fff" />
+        </TouchableOpacity>
+      </View>
+
+      <CameraView ref={cameraRef} style={styles.camera} facing={facing}>
+        <View style={styles.cameraOverlay}>
+          <View style={styles.crosshair}>
+            <View style={[styles.crosshairCorner, styles.topLeft]} />
+            <View style={[styles.crosshairCorner, styles.topRight]} />
+            <View style={[styles.crosshairCorner, styles.bottomLeft]} />
+            <View style={[styles.crosshairCorner, styles.bottomRight]} />
+          </View>
+        </View>
+      </CameraView>
+
+      <View style={styles.cameraControls}>
+        <View style={{ width: 48 }} />
+        <TouchableOpacity style={styles.captureButton} onPress={takePicture}>
+          <View style={styles.captureButtonInner} />
+        </TouchableOpacity>
+        <View style={{ width: 48 }} />
+      </View>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#0f0f23",
+  },
+  centered: {
+    flex: 1,
+    backgroundColor: "#0f0f23",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 16,
+  },
+  topBar: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  topBarTitle: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "600",
+  },
+  permissionText: {
+    color: "#888",
+    fontSize: 16,
+    textAlign: "center",
+  },
+  permissionButton: {
+    backgroundColor: "#9945ff",
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  permissionButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  camera: {
+    flex: 1,
+  },
+  cameraOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  crosshair: {
+    width: 240,
+    height: 240,
+    position: "relative",
+  },
+  crosshairCorner: {
+    position: "absolute",
+    width: 40,
+    height: 40,
+    borderColor: "#14f195",
+  },
+  topLeft: {
+    top: 0,
+    left: 0,
+    borderTopWidth: 3,
+    borderLeftWidth: 3,
+  },
+  topRight: {
+    top: 0,
+    right: 0,
+    borderTopWidth: 3,
+    borderRightWidth: 3,
+  },
+  bottomLeft: {
+    bottom: 0,
+    left: 0,
+    borderBottomWidth: 3,
+    borderLeftWidth: 3,
+  },
+  bottomRight: {
+    bottom: 0,
+    right: 0,
+    borderBottomWidth: 3,
+    borderRightWidth: 3,
+  },
+  cameraControls: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 28,
+    paddingHorizontal: 40,
+  },
+  captureButton: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: "transparent",
+    borderWidth: 4,
+    borderColor: "#fff",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  captureButtonInner: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#fff",
+  },
+  previewContainer: {
+    padding: 20,
+    alignItems: "center",
+  },
+  previewImage: {
+    width: "100%",
+    aspectRatio: 3 / 4,
+    borderRadius: 16,
+    marginBottom: 20,
+  },
+  variantSelector: {
+    width: "100%",
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  variantCard: {
+    flex: 1,
+    backgroundColor: "#1a1a2e",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#2d2d4d",
+    padding: 8,
+  },
+  variantCardActive: {
+    borderColor: "#14f195",
+  },
+  variantThumb: {
+    width: "100%",
+    aspectRatio: 1,
+    borderRadius: 8,
+  },
+  variantThumbProved: {
+    borderWidth: 2,
+    borderColor: "#14f195",
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  variantLabel: {
+    color: "#fff",
+    fontSize: 12,
+    marginTop: 6,
+    textAlign: "center",
+    fontWeight: "600",
+  },
+  provedBadge: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "#14f195",
+    paddingVertical: 3,
+    paddingHorizontal: 4,
+  },
+  provedBadgeText: {
+    color: "#0f0f23",
+    fontSize: 9,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  previewProvedContainer: {
+    width: "100%",
+    position: "relative",
+    marginBottom: 20,
+  },
+  previewFrame: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 20,
+    backgroundColor: "#14f195",
+    paddingVertical: 8,
+  },
+  previewFrameText: {
+    textAlign: "center",
+    color: "#0f0f23",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  statusContainer: {
+    backgroundColor: "#1a1a2e",
+    borderRadius: 16,
+    padding: 20,
+    width: "100%",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  filterCard: {
+    width: "100%",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 14,
+    backgroundColor: "#1a1a2e",
+    borderWidth: 1,
+    borderColor: "#2d2d4d",
+  },
+  filterPass: {
+    borderColor: "#14f19566",
+  },
+  filterWarn: {
+    borderColor: "#f2c94c99",
+  },
+  filterReject: {
+    borderColor: "#ff6b6b99",
+  },
+  filterCardTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "700",
+    marginTop: 6,
+  },
+  filterCardDesc: {
+    color: "#b8b8c8",
+    fontSize: 13,
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  filterReason: {
+    color: "#ddd",
+    fontSize: 13,
+    marginTop: 4,
+    lineHeight: 18,
+  },
+  statusText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  modeMetaText: {
+    color: "#b8b8c8",
+    fontSize: 12,
+    marginTop: 4,
+  },
+  hashContainer: {
+    marginTop: 12,
+    backgroundColor: "#0f0f23",
+    borderRadius: 8,
+    padding: 12,
+    width: "100%",
+  },
+  hashLabel: {
+    color: "#9945ff",
+    fontSize: 12,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
+  hashValue: {
+    color: "#14f195",
+    fontSize: 14,
+    fontFamily: "monospace",
+  },
+  errorText: {
+    color: "#ff6b6b",
+    fontSize: 14,
+    marginTop: 8,
+  },
+  previewButtons: {
+    width: "100%",
+    gap: 12,
+  },
+  retakeButton: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#2a2a4a",
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  retakeText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  registerButton: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#14f195",
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  registerText: {
+    color: "#0f0f23",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  registerButtonSecondary: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#2a2a4a",
+    paddingVertical: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#4b4b71",
+  },
+  registerTextSecondary: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  doneButton: {
+    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#9945ff",
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  doneText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  shareButton: {
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#2a2a4a",
+    paddingVertical: 16,
+    borderRadius: 12,
+  },
+  linkButton: {
+    marginTop: 8,
+    backgroundColor: "#2a2a4a",
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: "center",
+  },
+  linkButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  qrImage: {
+    width: 160,
+    height: 160,
+    marginTop: 8,
+    alignSelf: "center",
+    borderRadius: 8,
+    backgroundColor: "#fff",
+  },
+});
+
+function extractGpsFromExif(exif: any): { lat: number; lng: number } | null {
+  if (!exif || typeof exif !== "object") return null;
+  const lat = Number(exif.GPSLatitude ?? exif.latitude ?? exif.Latitude);
+  const lng = Number(exif.GPSLongitude ?? exif.longitude ?? exif.Longitude);
+  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
+  return { lat, lng };
+}

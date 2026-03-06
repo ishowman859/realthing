@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Verity",
+    "slug": "verity",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "backgroundColor": "#0f0f23"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.verity.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "사진 촬영 후 pHash를 블록체인에 등록하기 위해 카메라 접근이 필요합니다.",
+        "NSPhotoLibraryUsageDescription": "촬영한 사진을 저장하기 위해 사진 라이브러리 접근이 필요합니다."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0f0f23"
+      },
+      "package": "com.verity.app",
+      "permissions": ["CAMERA"]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "사진 촬영 후 pHash를 블록체인에 등록하기 위해 카메라 접근이 필요합니다."
+        }
+      ]
+    ],
+    "extra": {
+      "verityApiUrl": "http://localhost:4000"
+    }
+  }
+}

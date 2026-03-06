@@ -1,0 +1,24 @@
+[features]
+seeds = false
+skip-lint = false
+
+# ── Verity Chain (Local / Production) ──
+[programs.localnet]
+photo_hash = "PHotohash111111111111111111111111111111111"
+verity_token = "PHTtoken1111111111111111111111111111111111"
+pht_bridge = "BRDGpht111111111111111111111111111111111111"
+
+[programs.devnet]
+photo_hash = "PHotohash111111111111111111111111111111111"
+verity_token = "PHTtoken1111111111111111111111111111111111"
+pht_bridge = "BRDGpht111111111111111111111111111111111111"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "localnet"
+wallet = "./chain/keys/validator-identity.json"
+
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"

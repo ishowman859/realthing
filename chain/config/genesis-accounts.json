@@ -1,0 +1,57 @@
+{
+  "description": "Verity Chain genesis account allocations",
+  "accounts": {
+    "validator_rewards_pool": {
+      "label": "Validator Rewards Pool (30%)",
+      "lamports": 300000000000000000,
+      "pht": 300000000,
+      "executable": false,
+      "note": "Distributed to validators as staking rewards over time"
+    },
+    "ecosystem_fund": {
+      "label": "Ecosystem Development Fund (25%)",
+      "lamports": 250000000000000000,
+      "pht": 250000000,
+      "executable": false,
+      "note": "Grants, partnerships, ecosystem growth"
+    },
+    "team_development": {
+      "label": "Team & Development (15%)",
+      "lamports": 150000000000000000,
+      "pht": 150000000,
+      "executable": false,
+      "vesting": {
+        "cliff_months": 12,
+        "vesting_months": 36
+      },
+      "note": "Core team allocation with 1yr cliff + 3yr vesting"
+    },
+    "community_airdrop": {
+      "label": "Community Airdrop (10%)",
+      "lamports": 100000000000000000,
+      "pht": 100000000,
+      "executable": false,
+      "note": "Early adopters, photo registrations milestones"
+    },
+    "liquidity_bridge": {
+      "label": "Bridge Liquidity (10%)",
+      "lamports": 100000000000000000,
+      "pht": 100000000,
+      "executable": false,
+      "note": "Locked in SOL<->VRT bridge pool"
+    },
+    "treasury": {
+      "label": "DAO Treasury (10%)",
+      "lamports": 100000000000000000,
+      "pht": 100000000,
+      "executable": false,
+      "note": "Governed by VRT token holders"
+    }
+  },
+  "faucet": {
+    "enabled": true,
+    "max_airdrop_lamports": 1000000000,
+    "max_airdrop_vrt": 1.0,
+    "note": "Testnet/Devnet faucet for development"
+  }
+}
