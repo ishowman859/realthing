@@ -29,5 +29,5 @@ venv/
 server/ai/models/*
 !server/ai/models/.gitkeep
 
-# IDE (optional — uncomment to exclude)
-# .vscode/
+# IDE
+.vscode/
