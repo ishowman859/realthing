@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Verity Verification</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <h1 id="titleText" class="title">Verity 검증 페이지</h1>
+      <p id="subText" class="sub">
+        QR 또는 공유 URL로 접속한 자산의 원본성/유사성 검증 결과를 표시합니다.
+      </p>
+
+      <section class="card">
+        <div id="labelToken" class="label">Verity 토큰</div>
+        <div id="tokenText" class="value mono">-</div>
+      </section>
+
+      <section class="card">
+        <div id="statusBadge" class="status warn">조회 중...</div>
+        <div id="monitorAlert" class="monitor-alert" style="display: none"></div>
+        <div class="grid">
+          <div>
+            <div id="labelSerial" class="label">일련번호</div>
+            <div id="serial" class="value mono">-</div>
+          </div>
+          <div>
+            <div id="labelMode" class="label">모드</div>
+            <div id="mode" class="value">-</div>
+          </div>
+          <div>
+            <div id="labelCreatedAt" class="label">생성 시각</div>
+            <div id="createdAt" class="value">-</div>
+          </div>
+          <div>
+            <div id="labelCapturedAt" class="label">촬영 시각(기기)</div>
+            <div id="capturedAt" class="value">-</div>
+          </div>
+          <div>
+            <div id="labelOnchainAt" class="label">온체인 시각</div>
+            <div id="onchainAt" class="value">-</div>
+          </div>
+          <div>
+            <div id="labelOwner" class="label">소유자</div>
+            <div id="owner" class="value mono">-</div>
+          </div>
+          <div>
+            <div id="labelRiskScore" class="label">AI 1차 점수</div>
+            <div id="riskScore" class="value">-</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div id="labelHashInfo" class="label">해시 정보</div>
+        <div class="grid">
+          <div>
+            <div class="label">SHA-256</div>
+            <div id="sha256" class="value mono">-</div>
+          </div>
+          <div>
+            <div class="label">pHash</div>
+            <div id="phash" class="value mono">-</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div id="labelOriginalFile" class="label">원본 파일</div>
+        <img id="assetImage" class="img" alt="검증 자산 이미지" />
+        <p id="assetEmpty" class="empty">표시할 이미지 URL이 없습니다.</p>
+      </section>
+
+      <section class="card">
+        <div id="labelActions" class="label">검증 액션</div>
+        <button id="recheckButton" class="btn">서버 재검증 요청</button>
+      </section>
+    </main>
+
+    <script src="script.js" defer></script>
+  </body>
+</html>

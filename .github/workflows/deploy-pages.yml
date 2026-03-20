@@ -1,0 +1,67 @@
+# 저장소 루트의 정적 웹(index, admin, css, js)만 GitHub Pages에 배포합니다.
+# Settings → Pages → Source: GitHub Actions
+name: Deploy static site to Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - name: Inject Pages marker into HTML
+        run: |
+          python3 << 'PY'
+          import re
+          from pathlib import Path
+          marker = 'name="verity-gh-pages"'
+          repl = '<head>\n    <meta name="verity-gh-pages" content="1" />\n    <meta charset="UTF-8" />'
+          pat = re.compile(
+              r"<head>\s*<meta\s+charset=\"UTF-8\"\s*/>",
+              re.IGNORECASE,
+          )
+          for name in ("index.html", "admin.html"):
+              p = Path(name)
+              t = p.read_text(encoding="utf-8")
+              if marker in t:
+                  continue
+              t2, n = pat.subn(repl, t, count=1)
+              if n != 1:
+                  raise SystemExit(f"Head pattern not found in {name}")
+              p.write_text(t2, encoding="utf-8")
+          PY
+
+      - name: Collect static site for Pages
+        run: |
+          mkdir -p _pages
+          cp index.html style.css script.js admin.html admin.css admin.js .nojekyll _pages/
+          cp index.html _pages/404.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _pages
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
