@@ -47,6 +47,16 @@ const I18N = {
     loadFail: "조회 실패",
     githubPagesNeedApi:
       "GitHub Pages에서는 API 주소가 필요합니다. URL에 ?api=https://백엔드주소 를 붙이세요.",
+    uploadSectionLabel: "미디어 업로드",
+    uploadHelp:
+      "사진 또는 동영상을 올리면 서버가 해시를 계산하고 등록한 뒤 아래에 검증 결과를 표시합니다.",
+    uploadButtonLabel: "업로드 및 등록",
+    ownerOptionalPlaceholder: "owner (선택, 비우면 웹 게스트)",
+    uploadWorking: "업로드 및 서버 처리 중…",
+    uploadOk: "등록 완료. 아래 검증 결과를 확인하세요.",
+    uploadFail: "업로드 실패",
+    uploadNeedFile: "파일을 선택하세요.",
+    uploadOrTokenHint: "URL에 토큰이 없으면 위에서 파일을 업로드하거나, 링크로 접속하세요.",
   },
   en: {
     htmlTitle: "Verity Verification",
@@ -80,6 +90,16 @@ const I18N = {
     loadFail: "Failed to load",
     githubPagesNeedApi:
       "On GitHub Pages, set the API URL: add ?api=https://your-api-host to the URL.",
+    uploadSectionLabel: "Upload media",
+    uploadHelp:
+      "Upload a photo or video: the server computes hashes, registers the asset, and shows verification below.",
+    uploadButtonLabel: "Upload & register",
+    ownerOptionalPlaceholder: "owner (optional)",
+    uploadWorking: "Uploading…",
+    uploadOk: "Registered. See verification below.",
+    uploadFail: "Upload failed",
+    uploadNeedFile: "Choose a file first.",
+    uploadOrTokenHint: "Upload a file above or open a link that includes a token.",
   },
   ja: {
     htmlTitle: "Verity 検証ページ",
@@ -113,6 +133,15 @@ const I18N = {
     loadFail: "取得失敗",
     githubPagesNeedApi:
       "GitHub Pages では API の URL が必要です。?api=https://バックエンド を付けてください。",
+    uploadSectionLabel: "メディアアップロード",
+    uploadHelp: "写真または動画を送ると、サーバーがハッシュを計算して登録し、下に検証結果を表示します。",
+    uploadButtonLabel: "アップロードして登録",
+    ownerOptionalPlaceholder: "owner（任意）",
+    uploadWorking: "アップロード処理中…",
+    uploadOk: "登録完了。下の結果を確認してください。",
+    uploadFail: "アップロード失敗",
+    uploadNeedFile: "ファイルを選んでください。",
+    uploadOrTokenHint: "トークン付きURLで開くか、上からファイルをアップロードしてください。",
   },
   zh: {
     htmlTitle: "Verity 验证页面",
@@ -146,6 +175,15 @@ const I18N = {
     loadFail: "加载失败",
     githubPagesNeedApi:
       "在 GitHub Pages 上需要提供 API 地址：请在 URL 加上 ?api=https://你的后端",
+    uploadSectionLabel: "上传媒体",
+    uploadHelp: "上传照片或视频后，服务器会计算哈希并注册，在下方显示验证结果。",
+    uploadButtonLabel: "上传并登记",
+    ownerOptionalPlaceholder: "owner（可选）",
+    uploadWorking: "正在上传…",
+    uploadOk: "已登记。请查看下方验证结果。",
+    uploadFail: "上传失败",
+    uploadNeedFile: "请先选择文件。",
+    uploadOrTokenHint: "请使用带令牌的链接打开，或从上方上传文件。",
   },
 };
 
@@ -183,9 +221,30 @@ function t(key, vars = {}) {
   return text;
 }
 
+let sessionToken = "";
+let lastPreviewUrl = null;
+
+/** 버튼 연타·서버 1초 가드와 맞춤: 동작 종료 후에도 최소 1초 간격 */
+const BTN_COOLDOWN_MS = 1000;
+
+function scheduleReenableButton(button, startedAt) {
+  if (!button) return;
+  const elapsed = Date.now() - startedAt;
+  const wait = Math.max(0, BTN_COOLDOWN_MS - elapsed);
+  window.setTimeout(() => {
+    button.disabled = false;
+  }, wait);
+}
+
 const el = {
   titleText: document.getElementById("titleText"),
   subText: document.getElementById("subText"),
+  labelUpload: document.getElementById("labelUpload"),
+  uploadHelp: document.getElementById("uploadHelp"),
+  uploadButton: document.getElementById("uploadButton"),
+  uploadStatus: document.getElementById("uploadStatus"),
+  fileInput: document.getElementById("fileInput"),
+  ownerInput: document.getElementById("ownerInput"),
   labelToken: document.getElementById("labelToken"),
   labelSerial: document.getElementById("labelSerial"),
   labelMode: document.getElementById("labelMode"),
@@ -233,6 +292,10 @@ function applyStaticI18n() {
   setText(el.recheckButton, t("recheckButton"));
   setText(el.assetEmpty, t("noImage"));
   el.assetImage.alt = t("assetAlt");
+  if (el.labelUpload) setText(el.labelUpload, t("uploadSectionLabel"));
+  if (el.uploadHelp) el.uploadHelp.textContent = t("uploadHelp");
+  if (el.uploadButton) setText(el.uploadButton, t("uploadButtonLabel"));
+  if (el.ownerInput) el.ownerInput.placeholder = t("ownerOptionalPlaceholder");
   setStatus("warn", t("loading"));
 }
 
@@ -311,7 +374,15 @@ function render(data) {
   updateMonitorAlert(data);
 
   if (data.assetUrl) {
+    if (lastPreviewUrl) {
+      URL.revokeObjectURL(lastPreviewUrl);
+      lastPreviewUrl = null;
+    }
     el.assetImage.src = data.assetUrl;
+    el.assetImage.style.display = "block";
+    el.assetEmpty.style.display = "none";
+  } else if (lastPreviewUrl) {
+    el.assetImage.src = lastPreviewUrl;
     el.assetImage.style.display = "block";
     el.assetEmpty.style.display = "none";
   } else {
@@ -330,37 +401,111 @@ function render(data) {
   }
 }
 
-async function main() {
-  applyStaticI18n();
-  const token = getTokenFromUrl();
-  setText(el.tokenText, token || "-");
-  if (!API_BASE) {
-    setStatus("bad", __verityStaticPages ? t("githubPagesNeedApi") : t("loadFail"));
-    return;
-  }
-  if (!token) {
-    setStatus("bad", t("noToken"));
-    return;
-  }
-
+function bindRecheck() {
+  let inFlight = false;
   el.recheckButton.addEventListener("click", async () => {
+    const tok = sessionToken;
+    if (!tok || inFlight || el.recheckButton.disabled) return;
+    inFlight = true;
+    el.recheckButton.disabled = true;
+    const t0 = Date.now();
     try {
-      el.recheckButton.disabled = true;
-      await triggerRecheck(token);
-      const fresh = await loadVerification(token);
+      await triggerRecheck(tok);
+      const fresh = await loadVerification(tok);
       render(fresh);
     } catch (err) {
       alert(err.message || t("recheckError"));
     } finally {
-      el.recheckButton.disabled = false;
+      inFlight = false;
+      scheduleReenableButton(el.recheckButton, t0);
     }
   });
+}
 
-  try {
-    const data = await loadVerification(token);
-    render(data);
-  } catch (err) {
-    setStatus("bad", err.message || t("loadFail"));
+function bindUpload() {
+  if (!el.uploadButton || !el.fileInput) return;
+  let inFlight = false;
+  const setUploadLocked = (locked) => {
+    el.uploadButton.disabled = locked;
+    el.fileInput.disabled = locked;
+    if (el.ownerInput) el.ownerInput.disabled = locked;
+  };
+
+  el.uploadButton.addEventListener("click", async () => {
+    if (inFlight || el.uploadButton.disabled) return;
+    const file = el.fileInput.files?.[0];
+    if (!file) {
+      alert(t("uploadNeedFile"));
+      return;
+    }
+    inFlight = true;
+    setUploadLocked(true);
+    const t0 = Date.now();
+
+    if (lastPreviewUrl) {
+      URL.revokeObjectURL(lastPreviewUrl);
+      lastPreviewUrl = null;
+    }
+    if (file.type.startsWith("image/")) {
+      lastPreviewUrl = URL.createObjectURL(file);
+    }
+
+    const fd = new FormData();
+    fd.append("file", file);
+    const owner = el.ownerInput?.value?.trim();
+    if (owner) fd.append("owner", owner);
+
+    el.uploadStatus.style.display = "block";
+    el.uploadStatus.textContent = t("uploadWorking");
+    try {
+      const res = await fetch(`${API_BASE}/v1/verify/upload`, { method: "POST", body: fd });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.message || res.statusText || String(res.status));
+      }
+      sessionToken = body.verification?.token || "";
+      setText(el.tokenText, sessionToken || "-");
+      render(body.verification);
+      el.uploadStatus.textContent = t("uploadOk");
+    } catch (err) {
+      el.uploadStatus.textContent = `${t("uploadFail")}: ${err.message || err}`;
+      if (lastPreviewUrl) {
+        URL.revokeObjectURL(lastPreviewUrl);
+        lastPreviewUrl = null;
+      }
+    } finally {
+      inFlight = false;
+      const elapsed = Date.now() - t0;
+      const wait = Math.max(0, BTN_COOLDOWN_MS - elapsed);
+      window.setTimeout(() => {
+        setUploadLocked(false);
+      }, wait);
+    }
+  });
+}
+
+async function main() {
+  applyStaticI18n();
+  sessionToken = getTokenFromUrl();
+  setText(el.tokenText, sessionToken || "-");
+  bindUpload();
+
+  if (!API_BASE) {
+    setStatus("bad", __verityStaticPages ? t("githubPagesNeedApi") : t("loadFail"));
+    return;
+  }
+
+  bindRecheck();
+
+  if (sessionToken) {
+    try {
+      const data = await loadVerification(sessionToken);
+      render(data);
+    } catch (err) {
+      setStatus("bad", err.message || t("loadFail"));
+    }
+  } else {
+    setStatus("warn", t("uploadOrTokenHint"));
   }
 }
 

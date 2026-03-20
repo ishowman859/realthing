@@ -94,7 +94,13 @@ body {
 }
 .btn:disabled {
   opacity: 0.5;
-  cursor: default;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.file-input:disabled,
+.text-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
@@ -112,4 +118,34 @@ body {
   padding: 10px 12px;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.upload-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.file-input {
+  flex: 1;
+  min-width: 200px;
+  color: #e8ecff;
+  font-size: 14px;
+}
+.text-input {
+  flex: 1;
+  min-width: 200px;
+  background: #0f0f23;
+  color: #fff;
+  border: 1px solid #2a2a4a;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+}
+.btn-primary {
+  background: #14f195;
+  color: #0f0f23;
+}
+.btn-primary:disabled {
+  opacity: 0.5;
 }
