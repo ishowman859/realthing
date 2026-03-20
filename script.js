@@ -19,7 +19,6 @@ const I18N = {
     htmlTitle: "Verity 검증 페이지",
     pageTitle: "Verity 검증 페이지",
     pageSub: "QR 또는 공유 URL로 접속한 자산의 원본성/유사성 검증 결과를 표시합니다.",
-    tokenLabel: "Verity 토큰",
     serialLabel: "일련번호",
     modeLabel: "모드",
     createdAtLabel: "생성 시각",
@@ -42,7 +41,7 @@ const I18N = {
     highSimilarity: "유사 이미지 높음 ({score}%)",
     warnSimilarity: "유사 이미지 주의 ({score}%)",
     lowSimilarity: "유사성 위험 낮음",
-    noToken: "검증 토큰이 없습니다.",
+    noToken: "공유 링크가 없거나 잘못되었습니다. 파일을 업로드하거나 올바른 링크로 접속하세요.",
     recheckError: "재검증 요청 중 오류",
     loadFail: "조회 실패",
     githubPagesNeedApi:
@@ -56,13 +55,12 @@ const I18N = {
     uploadOk: "등록 완료. 아래 검증 결과를 확인하세요.",
     uploadFail: "업로드 실패",
     uploadNeedFile: "파일을 선택하세요.",
-    uploadOrTokenHint: "URL에 토큰이 없으면 위에서 파일을 업로드하거나, 링크로 접속하세요.",
+    uploadOrTokenHint: "파일을 업로드하거나 공유 링크로 접속하면 결과가 표시됩니다.",
   },
   en: {
     htmlTitle: "Verity Verification",
     pageTitle: "Verity Verification",
     pageSub: "Displays authenticity/similarity verification results for assets opened via QR or shared URL.",
-    tokenLabel: "Verity Token",
     serialLabel: "Serial",
     modeLabel: "Mode",
     createdAtLabel: "Created At",
@@ -85,7 +83,7 @@ const I18N = {
     highSimilarity: "High image similarity ({score}%)",
     warnSimilarity: "Caution: similar image ({score}%)",
     lowSimilarity: "Low similarity risk",
-    noToken: "Verification token is missing.",
+    noToken: "No valid share link. Upload a file or open the correct link.",
     recheckError: "Error while requesting recheck",
     loadFail: "Failed to load",
     githubPagesNeedApi:
@@ -99,13 +97,12 @@ const I18N = {
     uploadOk: "Registered. See verification below.",
     uploadFail: "Upload failed",
     uploadNeedFile: "Choose a file first.",
-    uploadOrTokenHint: "Upload a file above or open a link that includes a token.",
+    uploadOrTokenHint: "Upload a file or open a shared link to see results.",
   },
   ja: {
     htmlTitle: "Verity 検証ページ",
     pageTitle: "Verity 検証ページ",
     pageSub: "QR または共有 URL で開いたアセットの真正性/類似性の検証結果を表示します。",
-    tokenLabel: "Verity トークン",
     serialLabel: "シリアル番号",
     modeLabel: "モード",
     createdAtLabel: "作成時刻",
@@ -128,7 +125,7 @@ const I18N = {
     highSimilarity: "画像の類似度が高い ({score}%)",
     warnSimilarity: "画像の類似に注意 ({score}%)",
     lowSimilarity: "類似リスクが低い",
-    noToken: "検証トークンがありません。",
+    noToken: "共有リンクがないか無効です。ファイルをアップロードするか正しいリンクを開いてください。",
     recheckError: "再検証リクエスト中にエラー",
     loadFail: "取得失敗",
     githubPagesNeedApi:
@@ -141,13 +138,12 @@ const I18N = {
     uploadOk: "登録完了。下の結果を確認してください。",
     uploadFail: "アップロード失敗",
     uploadNeedFile: "ファイルを選んでください。",
-    uploadOrTokenHint: "トークン付きURLで開くか、上からファイルをアップロードしてください。",
+    uploadOrTokenHint: "ファイルをアップロードするか共有リンクで開くと結果が表示されます。",
   },
   zh: {
     htmlTitle: "Verity 验证页面",
     pageTitle: "Verity 验证页面",
     pageSub: "显示通过二维码或分享链接访问的资产真伪/相似性验证结果。",
-    tokenLabel: "Verity 令牌",
     serialLabel: "序列号",
     modeLabel: "模式",
     createdAtLabel: "创建时间",
@@ -170,7 +166,7 @@ const I18N = {
     highSimilarity: "图像相似度高 ({score}%)",
     warnSimilarity: "注意：图像相似 ({score}%)",
     lowSimilarity: "相似风险较低",
-    noToken: "缺少验证令牌。",
+    noToken: "没有有效的分享链接。请上传文件或使用正确链接打开。",
     recheckError: "请求重新验证时出错",
     loadFail: "加载失败",
     githubPagesNeedApi:
@@ -183,7 +179,7 @@ const I18N = {
     uploadOk: "已登记。请查看下方验证结果。",
     uploadFail: "上传失败",
     uploadNeedFile: "请先选择文件。",
-    uploadOrTokenHint: "请使用带令牌的链接打开，或从上方上传文件。",
+    uploadOrTokenHint: "上传文件或通过分享链接打开即可查看结果。",
   },
 };
 
@@ -245,7 +241,6 @@ const el = {
   uploadStatus: document.getElementById("uploadStatus"),
   fileInput: document.getElementById("fileInput"),
   ownerInput: document.getElementById("ownerInput"),
-  labelToken: document.getElementById("labelToken"),
   labelSerial: document.getElementById("labelSerial"),
   labelMode: document.getElementById("labelMode"),
   labelCreatedAt: document.getElementById("labelCreatedAt"),
@@ -256,7 +251,6 @@ const el = {
   labelHashInfo: document.getElementById("labelHashInfo"),
   labelOriginalFile: document.getElementById("labelOriginalFile"),
   labelActions: document.getElementById("labelActions"),
-  tokenText: document.getElementById("tokenText"),
   statusBadge: document.getElementById("statusBadge"),
   mode: document.getElementById("mode"),
   createdAt: document.getElementById("createdAt"),
@@ -278,7 +272,6 @@ function applyStaticI18n() {
   document.title = t("htmlTitle");
   setText(el.titleText, t("pageTitle"));
   setText(el.subText, t("pageSub"));
-  setText(el.labelToken, t("tokenLabel"));
   setText(el.labelSerial, t("serialLabel"));
   setText(el.labelMode, t("modeLabel"));
   setText(el.labelCreatedAt, t("createdAtLabel"));
@@ -464,7 +457,6 @@ function bindUpload() {
         throw new Error(body.message || res.statusText || String(res.status));
       }
       sessionToken = body.verification?.token || "";
-      setText(el.tokenText, sessionToken || "-");
       render(body.verification);
       el.uploadStatus.textContent = t("uploadOk");
     } catch (err) {
@@ -487,7 +479,6 @@ function bindUpload() {
 async function main() {
   applyStaticI18n();
   sessionToken = getTokenFromUrl();
-  setText(el.tokenText, sessionToken || "-");
   bindUpload();
 
   if (!API_BASE) {
