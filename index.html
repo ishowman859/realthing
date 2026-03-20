@@ -13,6 +13,32 @@
         QR 또는 공유 URL로 접속한 자산의 원본성/유사성 검증 결과를 표시합니다.
       </p>
 
+      <section class="card" id="uploadCard">
+        <div id="labelUpload" class="label">미디어 업로드</div>
+        <p id="uploadHelp" class="sub" style="margin-top: 0; font-size: 14px">
+          사진 또는 동영상을 올리면 서버가 해시를 계산하고 등록한 뒤 아래에 검증 결과를 표시합니다.
+        </p>
+        <div class="upload-row">
+          <input
+            id="fileInput"
+            type="file"
+            accept="image/*,video/*"
+            class="file-input"
+          />
+        </div>
+        <div class="upload-row" style="margin-top: 10px">
+          <input
+            id="ownerInput"
+            type="text"
+            class="text-input mono"
+            placeholder="owner (선택, 비우면 웹 게스트)"
+            autocomplete="off"
+          />
+          <button type="button" id="uploadButton" class="btn btn-primary">업로드 및 등록</button>
+        </div>
+        <p id="uploadStatus" class="empty" style="margin-top: 10px; display: none"></p>
+      </section>
+
       <section class="card">
         <div id="labelToken" class="label">Verity 토큰</div>
         <div id="tokenText" class="value mono">-</div>

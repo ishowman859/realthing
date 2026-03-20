@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import multer from "multer";
 import { v4 as uuidv4 } from "uuid";
 import {
   attachAssetToBatch,
@@ -27,11 +28,23 @@ import {
   verifyMerkleProof,
 } from "./merkle.js";
 import { shouldRunBatchScheduler, touchBatchActivity } from "./batchActivity.js";
+import {
+  averageHash16FromImageBuffer,
+  isProbablyImageMime,
+  isProbablyVideoMime,
+  sha256Buffer,
+} from "./mediaHash.js";
 
 const verifyBaseUrl = process.env.VERIFY_BASE_URL || "https://verify.verity.app/v";
 const corsOrigin = (process.env.CORS_ORIGIN || "*")
   .split(",")
   .map((v) => v.trim());
+
+const uploadMaxBytes = Number(process.env.UPLOAD_MAX_BYTES || 80 * 1024 * 1024);
+const verifyWebUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: uploadMaxBytes },
+});
 
 /**
  * pending 배치 행을 잠근 뒤 머클을 만들고 sent 처리합니다.
@@ -156,6 +169,11 @@ export function createApp() {
     },
     message: "SHA-256 제출은 1초에 1회만 가능합니다.",
   });
+  const onePerSecondVerifyUploadGuard = createRequestIntervalGuard({
+    intervalMs: 1000,
+    keyResolver: (req) => `verify-upload:${getClientIp(req)}`,
+    message: "파일 업로드는 1초에 1회만 가능합니다.",
+  });
 
   const uploadPerMinuteByIp = createSlidingWindowRateLimit({
     windowMs: Number(process.env.UPLOAD_RATE_WINDOW_MS || 60_000),
@@ -168,7 +186,9 @@ export function createApp() {
   app.use((req, res, next) => {
     if (
       req.method === "POST" &&
-      (req.path === "/v1/assets" || req.path === "/v1/ingest/sha256")
+      (req.path === "/v1/assets" ||
+        req.path === "/v1/ingest/sha256" ||
+        req.path === "/v1/verify/upload")
     ) {
       touchBatchActivity();
     }
@@ -469,6 +489,106 @@ export function createApp() {
       res.status(500).json({ message: "관리자 배치 목록 조회 실패" });
     }
   });
+
+  /** 검증 웹 등: 파일 업로드 → SHA-256·(이미지면) aHash 기반으로 자산 등록 후 검증 뷰 반환 */
+  app.post(
+    "/v1/verify/upload",
+    uploadPerMinuteByIp,
+    onePerSecondVerifyUploadGuard,
+    (req, res, next) => {
+      verifyWebUpload.single("file")(req, res, (err) => {
+        if (err) {
+          if (err.code === "LIMIT_FILE_SIZE") {
+            return res.status(413).json({ message: "파일 크기 제한을 초과했습니다." });
+          }
+          return res.status(400).json({ message: err.message || "업로드 처리 실패" });
+        }
+        next();
+      });
+    },
+    async (req, res) => {
+      try {
+        const file = req.file;
+        if (!file?.buffer) {
+          return res.status(400).json({ message: "file 필드로 이미지 또는 동영상을 보내주세요." });
+        }
+        const mime = asString(file.mimetype);
+        if (!isProbablyImageMime(mime) && !isProbablyVideoMime(mime)) {
+          return res.status(400).json({ message: "이미지 또는 동영상만 업로드할 수 있습니다." });
+        }
+
+        let owner = asString(req.body?.owner);
+        if (!owner) owner = `web-guest-${getClientIp(req).replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+
+        const mediaType = isProbablyVideoMime(mime) ? "video" : "photo";
+        const sha256 = sha256Buffer(file.buffer);
+        let phash = null;
+        if (mediaType === "photo") {
+          phash = await averageHash16FromImageBuffer(file.buffer);
+        }
+
+        let duplicateScore = null;
+        if (phash) {
+          const candidates = await listPhashCandidates(phash);
+          duplicateScore = getBestDuplicateScore(phash, candidates);
+        }
+
+        const id = uuidv4();
+        const token = createToken();
+        const serial = createSerial("phash");
+        const capturedTimestampMs = Date.now();
+        const minuteBucket = minuteBucketIso(capturedTimestampMs);
+        const batch = await getBatchSlotForMinuteBucket(minuteBucket);
+        const metadata = {
+          source: "verify-web-upload",
+          originalName: asString(file.originalname) || null,
+          mimeType: mime,
+          size: file.size,
+        };
+
+        const row = await insertAsset({
+          id,
+          token,
+          serial,
+          owner,
+          mode: "phash",
+          mediaType,
+          sha256,
+          phash,
+          capturedTimestampMs,
+          minuteBucket,
+          gpsLat: null,
+          gpsLng: null,
+          batchId: batch.id,
+          aiRiskScore: null,
+          metadata,
+          chainTxSignature: null,
+          teeProof: null,
+          chainVerified: false,
+          duplicateScore,
+        });
+        const attached = await attachAssetToBatch(row.id, batch.id);
+        await ensureFollowingBatchPrepared(attached);
+        if (
+          attached &&
+          Number(attached.item_count) >= BATCH_MERKLE_IMMEDIATE_AT_COUNT
+        ) {
+          void finalizePendingBatchMerkle(attached.id).catch((err) =>
+            console.error("Immediate batch finalize failed:", err)
+          );
+        }
+
+        const merkleCheck = await verifyAssetAgainstIndexedBlock(row);
+        res.status(201).json({
+          asset: { ...toClientRecord(row, verifyBaseUrl), token: row.token },
+          verification: toVerificationView(row, merkleCheck),
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "업로드 등록 실패" });
+      }
+    }
+  );
 
   app.get("/v1/verify/:token", async (req, res) => {
     try {

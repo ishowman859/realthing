@@ -2,6 +2,8 @@
 
 검증 UI는 **`index.html`**, **`style.css`**, **`script.js`** — 관리자는 **`admin.html`**, **`admin.css`**, **`admin.js`** 입니다. API는 별도 `server/`에서 제공합니다.
 
+검증 페이지에서 **사진/동영상 파일을 업로드**하면 `POST /v1/verify/upload`로 등록되고, 서버가 `{ asset, verification }` JSON으로 응답합니다 (로컬은 `npx serve .` + 서버 `npm run dev`, Pages는 `?api=` 필요).
+
 ## 로컬 실행
 
 저장소 루트에서:

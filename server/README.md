@@ -10,6 +10,7 @@
 - `POST /v1/anti-spoof/check` Silent-Face-Anti-Spoofing 스푸핑 점수 조회
 - `GET /v1/verify/:token` 검증 페이지 조회 데이터
 - `POST /v1/verify/:token/recheck` 재검증
+- `POST /v1/verify/upload` **multipart** `file` 필드 — 사진/동영상 바이트로 SHA-256·(이미지면 8×8 평균 해시) 계산 후 `phash` 모드로 등록, `{ asset, verification }` JSON 반환 (검증 웹 업로드용)
 - `GET /v1/admin/health` 관리자 보호 라우트 상태 확인
 - `GET /v1/admin/assets` 최근 등록 자산 조회 (관리자)
 - `GET /v1/admin/batches` 최근 분단위 배치 조회 (관리자)
@@ -64,6 +65,7 @@ npm run dev
 - `POST /v1/anti-spoof/check`
 - `GET /v1/verify/:token`
 - `POST /v1/verify/:token/recheck`
+- `POST /v1/verify/upload` (multipart `file`, 선택 `owner`)
 - `GET /v1/admin/health` (`ADMIN_TOKEN` 필요)
 - `GET /v1/admin/assets?limit=50` (`ADMIN_TOKEN` 필요)
 - `GET /v1/admin/batches?limit=30` (`ADMIN_TOKEN` 필요)
@@ -84,10 +86,10 @@ SILENT_FACE_API_URL=http://localhost:8001/predict
 
 ## 비고
 
-- `POST /v1/assets`, `POST /v1/ingest/sha256`는 **IP당** 슬라이딩 윈도우로
+- `POST /v1/assets`, `POST /v1/ingest/sha256`, `POST /v1/verify/upload`는 **IP당** 슬라이딩 윈도우로
   기본 **1분에 3회** 업로드(등록) 제한(`UPLOAD_RATE_LIMIT_PER_MINUTE`, `UPLOAD_RATE_WINDOW_MS`, 429 + `retryAfterMs`).
-  두 경로 **합산**으로 카운트합니다.
-- `POST /v1/assets`, `POST /v1/ingest/sha256`, `POST /v1/anti-spoof/check`에는
+  세 경로 **합산**으로 카운트합니다.
+- `POST /v1/assets`, `POST /v1/ingest/sha256`, `POST /v1/verify/upload`, `POST /v1/anti-spoof/check`에는
   별도로 1초 1회 제한(키: IP/owner 등)이 걸려 있습니다.
 - 현재 `sha256` 체인 검증은 `chain_tx_signature` 존재 여부 기반의 MVP 체크입니다.
 - 실제 운영에서는 Polygon RPC에서 tx/event를 조회해 해시 일치 검증으로 교체해야 합니다.
