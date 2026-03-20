@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Verity Admin</title>
+    <style>
+      :root {
+        color-scheme: dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Noto Sans KR", Arial, sans-serif;
+        background: #0f0f23;
+        color: #fff;
+      }
+      .wrap {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 24px 16px 48px;
+      }
+      .title {
+        margin: 0 0 8px;
+        font-size: 28px;
+        font-weight: 800;
+      }
+      .sub {
+        margin: 0 0 16px;
+        color: #9aa0b4;
+      }
+      .card {
+        background: #1a1a2e;
+        border: 1px solid #2a2a4a;
+        border-radius: 12px;
+        padding: 14px;
+        margin-bottom: 14px;
+      }
+      .row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .input {
+        flex: 1;
+        min-width: 240px;
+        background: #0f0f23;
+        color: #fff;
+        border: 1px solid #2a2a4a;
+        border-radius: 10px;
+        padding: 10px 12px;
+      }
+      .btn {
+        border: 0;
+        background: #14f195;
+        color: #0f0f23;
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .btn.secondary {
+        background: #2a2a4a;
+        color: #fff;
+      }
+      .status {
+        margin-top: 10px;
+        font-size: 13px;
+        color: #9aa0b4;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        text-align: left;
+        border-bottom: 1px solid #2a2a4a;
+        padding: 8px 6px;
+        font-size: 13px;
+        word-break: break-all;
+      }
+      th {
+        color: #9aa0b4;
+        font-weight: 600;
+      }
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+      }
+      .ok {
+        color: #14f195;
+      }
+      .bad {
+        color: #ff6b6b;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1 class="title">Verity Admin</h1>
+      <p class="sub">관리자 토큰으로 최근 등록 데이터와 배치 상태를 조회합니다.</p>
+
+      <section class="card">
+        <div class="row">
+          <input
+            id="apiBase"
+            class="input mono"
+            placeholder="API Base URL (예: http://localhost:4000)"
+          />
+          <input
+            id="adminToken"
+            class="input mono"
+            type="password"
+            placeholder="ADMIN_TOKEN"
+          />
+          <button id="loadButton" class="btn">불러오기</button>
+          <button id="saveButton" class="btn secondary">토큰 저장</button>
+        </div>
+        <div id="statusText" class="status">대기 중</div>
+      </section>
+
+      <section class="card">
+        <h3>Admin Health</h3>
+        <div id="healthText" class="status">-</div>
+      </section>
+
+      <section class="card">
+        <h3>최근 자산</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>생성시각</th>
+              <th>시리얼</th>
+              <th>오너</th>
+              <th>모드</th>
+              <th>미디어</th>
+              <th>AI점수</th>
+              <th>중복점수</th>
+            </tr>
+          </thead>
+          <tbody id="assetsBody"></tbody>
+        </table>
+      </section>
+
+      <section class="card">
+        <h3>최근 분단위 배치</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>minuteBucket</th>
+              <th>segment</th>
+              <th>status</th>
+              <th>itemCount</th>
+              <th>blockNumber</th>
+              <th>sentAt</th>
+            </tr>
+          </thead>
+          <tbody id="batchesBody"></tbody>
+        </table>
+      </section>
+    </main>
+
+    <script>
+      const params = new URLSearchParams(window.location.search);
+      const defaultApiBase =
+        params.get("api") ||
+        (window.location.hostname === "localhost" ? "http://localhost:4000" : "/api");
+      const apiBaseInput = document.getElementById("apiBase");
+      const adminTokenInput = document.getElementById("adminToken");
+      const statusText = document.getElementById("statusText");
+      const healthText = document.getElementById("healthText");
+      const assetsBody = document.getElementById("assetsBody");
+      const batchesBody = document.getElementById("batchesBody");
+      const loadButton = document.getElementById("loadButton");
+      const saveButton = document.getElementById("saveButton");
+
+      apiBaseInput.value = defaultApiBase;
+      adminTokenInput.value = localStorage.getItem("verity_admin_token") || "";
+
+      function fmt(v) {
+        if (!v) return "-";
+        const d = new Date(v);
+        if (Number.isNaN(d.getTime())) return String(v);
+        return d.toLocaleString("ko-KR");
+      }
+
+      function setStatus(text, isError = false) {
+        statusText.textContent = text;
+        statusText.className = `status ${isError ? "bad" : "ok"}`;
+      }
+
+      async function adminFetch(path) {
+        const token = adminTokenInput.value.trim();
+        const base = apiBaseInput.value.trim().replace(/\/$/, "");
+        const response = await fetch(`${base}${path}`, {
+          headers: {
+            "x-admin-token": token,
+          },
+        });
+        if (!response.ok) {
+          const msg = await response.text();
+          throw new Error(`${response.status} ${msg}`);
+        }
+        return response.json();
+      }
+
+      function renderAssets(rows) {
+        assetsBody.innerHTML = "";
+        for (const row of rows) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td>${fmt(row.createdAt)}</td>
+            <td class="mono">${row.serial || "-"}</td>
+            <td class="mono">${row.owner || "-"}</td>
+            <td>${row.mode || "-"}</td>
+            <td>${row.mediaType || "-"}</td>
+            <td>${typeof row.aiRiskScore === "number" ? row.aiRiskScore : "-"}</td>
+            <td>${typeof row.duplicateScore === "number" ? row.duplicateScore : "-"}</td>
+          `;
+          assetsBody.appendChild(tr);
+        }
+      }
+
+      function renderBatches(rows) {
+        batchesBody.innerHTML = "";
+        for (const row of rows) {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td class="mono">${fmt(row.minuteBucket)}</td>
+            <td>${row.segment ?? 0}</td>
+            <td>${row.status || "-"}</td>
+            <td>${row.itemCount ?? "-"}</td>
+            <td>${row.blockNumber ?? "-"}</td>
+            <td>${fmt(row.sentAt)}</td>
+          `;
+          batchesBody.appendChild(tr);
+        }
+      }
+
+      async function loadAdminData() {
+        setStatus("조회 중...");
+        try {
+          const [health, assets, batches] = await Promise.all([
+            adminFetch("/v1/admin/health"),
+            adminFetch("/v1/admin/assets?limit=50"),
+            adminFetch("/v1/admin/batches?limit=30"),
+          ]);
+          healthText.textContent = JSON.stringify(health);
+          renderAssets(assets);
+          renderBatches(batches);
+          setStatus("조회 완료");
+        } catch (error) {
+          setStatus(`조회 실패: ${error.message}`, true);
+          healthText.textContent = "-";
+          assetsBody.innerHTML = "";
+          batchesBody.innerHTML = "";
+        }
+      }
+
+      loadButton.addEventListener("click", () => {
+        void loadAdminData();
+      });
+
+      saveButton.addEventListener("click", () => {
+        localStorage.setItem("verity_admin_token", adminTokenInput.value.trim());
+        setStatus("토큰 저장 완료");
+      });
+    </script>
+  </body>
+</html>

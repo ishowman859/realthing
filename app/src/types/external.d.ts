@@ -24,6 +24,13 @@ declare module "exif-parser" {
   export default ExifParser;
 }
 
+declare module "expo-video-thumbnails" {
+  export function getThumbnailAsync(
+    sourceFilename: string,
+    options: { time?: number; quality?: number }
+  ): Promise<{ uri: string; width?: number; height?: number }>;
+}
+
 declare module "jpeg-js" {
   interface DecodeOptions {
     useTArray?: boolean;

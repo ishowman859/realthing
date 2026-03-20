@@ -3,6 +3,7 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { Buffer } from "buffer";
 import jpeg from "jpeg-js";
 import ExifParser from "exif-parser";
+import { checkAntiSpoof } from "./verityApi";
 
 const ANALYSIS_SIZE = 160;
 
@@ -16,6 +17,8 @@ export interface FirstStageFilterResult {
     blurVariance: number;
     periodicityScore: number;
     metadataRisk: number;
+    antiSpoofScore: number | null;
+    antiSpoofModel: string | null;
   };
 }
 
@@ -26,11 +29,13 @@ export interface FirstStageFilterResult {
  * - EXIF 이상치(편집 흔적 등) 감지
  */
 export async function runFirstStageFilter(
-  imageUri: string
+  imageUri: string,
+  options?: { skipPeriodicity?: boolean }
 ): Promise<FirstStageFilterResult> {
-  const [pixelMetrics, metadataRiskResult] = await Promise.all([
-    analyzePixels(imageUri),
+  const [pixelMetrics, metadataRiskResult, antiSpoofResult] = await Promise.all([
+    analyzePixels(imageUri, options),
     analyzeMetadataRisk(imageUri),
+    checkAntiSpoof(imageUri),
   ]);
 
   const reasons: string[] = [];
@@ -59,6 +64,27 @@ export async function runFirstStageFilter(
     reasons.push(...metadataRiskResult.reasons);
   }
 
+  // [각주1] Silent-Face-Anti-Spoofing 점수를 추가 반영합니다.
+  if (antiSpoofResult) {
+    const spoofPct = Math.round(antiSpoofResult.spoofProbability * 100);
+    if (antiSpoofResult.spoofProbability >= 0.75) {
+      score += 40;
+      reasons.push(
+        `Silent-Face-Anti-Spoofing 모델이 재촬영 가능성을 높게 감지했습니다 (${spoofPct}%).`
+      );
+    } else if (antiSpoofResult.spoofProbability >= 0.55) {
+      score += 22;
+      reasons.push(
+        `Silent-Face-Anti-Spoofing 모델이 재촬영 의심 신호를 감지했습니다 (${spoofPct}%).`
+      );
+    } else if (antiSpoofResult.spoofProbability >= 0.35) {
+      score += 10;
+      reasons.push(
+        `Silent-Face-Anti-Spoofing 모델에서 약한 의심 신호가 감지되었습니다 (${spoofPct}%).`
+      );
+    }
+  }
+
   score = Math.max(0, Math.min(100, score));
 
   let decision: FirstStageDecision = "pass";
@@ -76,11 +102,18 @@ export async function runFirstStageFilter(
       blurVariance: round2(pixelMetrics.blurVariance),
       periodicityScore: round3(pixelMetrics.periodicityScore),
       metadataRisk: metadataRiskResult.risk,
+      antiSpoofScore: antiSpoofResult
+        ? Math.round(antiSpoofResult.spoofProbability * 100)
+        : null,
+      antiSpoofModel: antiSpoofResult?.model ?? null,
     },
   };
 }
 
-async function analyzePixels(imageUri: string): Promise<{
+async function analyzePixels(
+  imageUri: string,
+  options?: { skipPeriodicity?: boolean }
+): Promise<{
   blurVariance: number;
   periodicityScore: number;
 }> {
@@ -106,7 +139,9 @@ async function analyzePixels(imageUri: string): Promise<{
   const gray = rgbaToGray(decoded.data, decoded.width, decoded.height);
 
   const blurVariance = varianceOfLaplacian(gray, decoded.width, decoded.height);
-  const periodicityScore = estimatePeriodicity(gray, decoded.width, decoded.height);
+  const periodicityScore = options?.skipPeriodicity
+    ? 0
+    : estimatePeriodicity(gray, decoded.width, decoded.height);
 
   return { blurVariance, periodicityScore };
 }

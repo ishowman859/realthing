@@ -15,6 +15,19 @@ export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
+/** 한 배치(세그먼트)당 최대 자산 수 */
+export const BATCH_ITEM_CAP = 60_000;
+/** 이 개수 이상이면 같은 분의 다음 세그먼트 행을 미리 만들어 둠 */
+export const BATCH_PREPARE_THRESHOLD = 50_000;
+/** 머클 봉인: 이 개수 이상이면 즉시 올림(스케줄 5초와 무관) */
+export const BATCH_MERKLE_IMMEDIATE_AT_COUNT = Number(
+  process.env.BATCH_MERKLE_IMMEDIATE_AT_COUNT || 50_000
+);
+/** 머클 봉인: 첫 자산 시각(first_item_at) 기준 이 초가 지나면 봉인 */
+export const BATCH_MERKLE_FLUSH_INTERVAL_SEC = Number(
+  process.env.BATCH_MERKLE_FLUSH_INTERVAL_SEC || 5
+);
+
 export async function initDatabase() {
   const schema = fs.readFileSync(schemaPath, "utf8");
   await pool.query(schema);
@@ -28,7 +41,7 @@ export async function insertAsset(asset) {
       captured_timestamp_ms, onchain_timestamp_ms, gps_lat, gps_lng, minute_bucket, batch_id,
       ai_risk_score, metadata_json, chain_tx_signature, chain_verified, duplicate_score
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
     )
     RETURNING *;
   `;
@@ -70,6 +83,15 @@ export async function listAssetsByOwner(owner) {
   return rows;
 }
 
+export async function listRecentAssets(limit = 50) {
+  const safeLimit = Math.max(1, Math.min(200, Number(limit) || 50));
+  const { rows } = await pool.query(
+    "SELECT * FROM assets ORDER BY created_at DESC LIMIT $1",
+    [safeLimit]
+  );
+  return rows;
+}
+
 export async function getAssetByToken(token) {
   const { rows } = await pool.query("SELECT * FROM assets WHERE token = $1", [
     token,
@@ -88,7 +110,7 @@ export async function countSha256ByOwner(owner) {
 export async function listPhashCandidates(phash, selfId = null) {
   const params = [phash];
   let sql =
-    "SELECT id, phash FROM assets WHERE mode = 'phash' AND phash IS NOT NULL AND phash <> $1";
+    "SELECT id, phash FROM assets WHERE phash IS NOT NULL AND phash <> $1";
   if (selfId) {
     params.push(selfId);
     sql += " AND id <> $2";
@@ -113,38 +135,131 @@ export async function updateAssetVerification(token, patch) {
   return rows[0] ?? null;
 }
 
-export async function getOrCreateMinuteBatch(minuteBucket, batchId) {
-  const { rows } = await pool.query(
-    `
-      INSERT INTO onchain_minute_batches (id, minute_bucket)
-      VALUES ($2::uuid, $1::timestamptz)
-      ON CONFLICT (minute_bucket)
-      DO UPDATE SET minute_bucket = EXCLUDED.minute_bucket
-      RETURNING *;
-    `,
-    [minuteBucket, batchId]
-  );
-  return rows[0];
+/**
+ * 같은 minute_bucket 안에서 item_count < BATCH_ITEM_CAP 인 pending 배치를 고르고,
+ * 없으면 새 segment 행을 만듭니다. 동시성은 해당 분 행들에 대한 FOR UPDATE 로 직렬화합니다.
+ */
+export async function getBatchSlotForMinuteBucket(minuteBucket) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    // 같은 minute_bucket 동시 최초 INSERT(세그먼트 0) 경쟁 방지
+    await client.query(
+      "SELECT pg_advisory_xact_lock(884001, hashtext($1::text))",
+      [minuteBucket]
+    );
+    const { rows: locked } = await client.query(
+      `
+        SELECT *
+        FROM onchain_minute_batches
+        WHERE minute_bucket = $1::timestamptz
+          AND status = 'pending'
+        ORDER BY segment ASC
+        FOR UPDATE
+      `,
+      [minuteBucket]
+    );
+
+    let target = locked.find((b) => Number(b.item_count) < BATCH_ITEM_CAP);
+    if (!target) {
+      const nextSeg =
+        locked.length > 0
+          ? Math.max(...locked.map((b) => Number(b.segment))) + 1
+          : 0;
+      const ins = await client.query(
+        `
+          INSERT INTO onchain_minute_batches (id, minute_bucket, segment, status)
+          VALUES (gen_random_uuid(), $1::timestamptz, $2, 'pending')
+          RETURNING *
+        `,
+        [minuteBucket, nextSeg]
+      );
+      target = ins.rows[0];
+    }
+    await client.query("COMMIT");
+    return target;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 export async function attachAssetToBatch(assetId, batchId) {
   await pool.query("UPDATE assets SET batch_id = $2 WHERE id = $1", [assetId, batchId]);
-  await pool.query(
-    "UPDATE onchain_minute_batches SET item_count = item_count + 1 WHERE id = $1",
+  const { rows } = await pool.query(
+    `
+      UPDATE onchain_minute_batches
+      SET item_count = item_count + 1,
+          first_item_at = COALESCE(first_item_at, NOW())
+      WHERE id = $1
+      RETURNING id, minute_bucket, segment, item_count, status, first_item_at
+    `,
     [batchId]
+  );
+  return rows[0] ?? null;
+}
+
+/**
+ * 현재 세그먼트가 5만 건 이상이면 (같은 분) segment+1 pending 행을 미리 INSERT (이미 있으면 생략).
+ */
+export async function ensureFollowingBatchPrepared(updatedBatchRow) {
+  if (!updatedBatchRow) return;
+  if (updatedBatchRow.status !== "pending") return;
+  const n = Number(updatedBatchRow.item_count);
+  if (n < BATCH_PREPARE_THRESHOLD) return;
+
+  const minuteBucket = updatedBatchRow.minute_bucket;
+  const seg = Number(updatedBatchRow.segment);
+  await pool.query(
+    `
+      INSERT INTO onchain_minute_batches (id, minute_bucket, segment, status)
+      VALUES (gen_random_uuid(), $1::timestamptz, $2, 'pending')
+      ON CONFLICT (minute_bucket, segment) DO NOTHING
+    `,
+    [minuteBucket, seg + 1]
   );
 }
 
-export async function listDuePendingBatches() {
+/**
+ * 머클 봉인 대상: (1) item_count >= 즉시 임계값 또는
+ * (2) 첫 자산 시각부터 플러시 간격(초) 경과. 분 경계와 무관.
+ */
+export async function listBatchesReadyForMerkleFlush() {
+  const imm = BATCH_MERKLE_IMMEDIATE_AT_COUNT;
+  const sec = BATCH_MERKLE_FLUSH_INTERVAL_SEC;
   const { rows } = await pool.query(
     `
       SELECT *
       FROM onchain_minute_batches
       WHERE status = 'pending'
-        AND minute_bucket < date_trunc('minute', now())
-      ORDER BY minute_bucket ASC
+        AND item_count > 0
+        AND (
+          item_count >= $1::int
+          OR (
+            first_item_at IS NOT NULL
+            AND first_item_at <= NOW() - ($2::int * interval '1 second')
+          )
+        )
+      ORDER BY minute_bucket ASC, segment ASC
       LIMIT 50
+    `,
+    [imm, sec]
+  );
+  return rows;
+}
+
+export async function listRecentBatches(limit = 30) {
+  const safeLimit = Math.max(1, Math.min(200, Number(limit) || 30));
+  const { rows } = await pool.query(
     `
+      SELECT *
+      FROM onchain_minute_batches
+      ORDER BY minute_bucket DESC, segment DESC
+      LIMIT $1
+    `,
+    [safeLimit]
   );
   return rows;
 }
@@ -162,20 +277,47 @@ export async function getBatchAssets(batchId) {
   return rows;
 }
 
+export async function getBatchById(batchId) {
+  const { rows } = await pool.query(
+    `
+      SELECT *
+      FROM onchain_minute_batches
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [batchId]
+  );
+  return rows[0] ?? null;
+}
+
+export async function getNextBlockNumber() {
+  const { rows } = await pool.query(
+    "SELECT COALESCE(MAX(block_number), 0) + 1 AS next_block FROM onchain_minute_batches"
+  );
+  return Number(rows[0]?.next_block ?? 1);
+}
+
 export async function markBatchSent(batchId, patch) {
-  const { txHash, merkleRoot, onchainTimestampMs } = patch;
+  const { txHash, blockNumber, merkleRoot, onchainTimestampMs } = patch;
   const { rows } = await pool.query(
     `
       UPDATE onchain_minute_batches
       SET status = 'sent',
           tx_hash = $2,
-          merkle_root = $3,
-          onchain_timestamp_ms = $4,
+          block_number = $3,
+          merkle_root = $4,
+          onchain_timestamp_ms = $5,
           sent_at = NOW()
       WHERE id = $1
       RETURNING *
     `,
-    [batchId, txHash ?? null, merkleRoot ?? null, onchainTimestampMs ?? null]
+    [
+      batchId,
+      txHash ?? null,
+      blockNumber ?? null,
+      merkleRoot ?? null,
+      onchainTimestampMs ?? null,
+    ]
   );
   return rows[0] ?? null;
 }
@@ -187,9 +329,41 @@ export async function markBatchFailed(batchId) {
   );
 }
 
+/** 미리 만들어 둔 빈 pending 배치(자산 0건)는 분 마감 시 삭제 */
+export async function deleteEmptyPendingBatch(batchId) {
+  await pool.query(
+    `
+      DELETE FROM onchain_minute_batches
+      WHERE id = $1 AND item_count = 0 AND status = 'pending'
+    `,
+    [batchId]
+  );
+}
+
 export async function setAssetsOnchainTimestamp(batchId, onchainTimestampMs) {
   await pool.query(
-    "UPDATE assets SET onchain_timestamp_ms = $2, chain_verified = TRUE WHERE batch_id = $1",
+    "UPDATE assets SET onchain_timestamp_ms = $2, chain_verified = FALSE WHERE batch_id = $1",
     [batchId, onchainTimestampMs]
   );
+}
+
+export async function setAssetsMerkleIndex(batchId, patchRows) {
+  for (const row of patchRows) {
+    await pool.query(
+      `
+        UPDATE assets
+        SET indexed_block_number = $2,
+            merkle_leaf_hash = $3,
+            merkle_proof_json = $4::jsonb,
+            updated_at = NOW()
+        WHERE id = $1
+      `,
+      [
+        row.assetId,
+        row.indexedBlockNumber ?? null,
+        row.merkleLeafHash ?? null,
+        JSON.stringify(row.merkleProof ?? []),
+      ]
+    );
+  }
 }

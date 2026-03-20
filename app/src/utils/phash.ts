@@ -8,6 +8,9 @@ const SAMPLE_SIZE = 32;
 /**
  * 이미지 URI로부터 pHash(Perceptual Hash)를 계산합니다.
  *
+ * 사진은 내부적으로 **그레이스케일(흑백) 근사** 파이프라인으로 처리됩니다
+ * (32×32 리사이즈 후 DCT → 저주파 비트열 → hex).
+ *
  * 알고리즘:
  * 1. 이미지를 32x32 그레이스케일로 리사이즈
  * 2. DCT(Discrete Cosine Transform) 적용

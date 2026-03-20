@@ -20,6 +20,7 @@ import {
   runFirstStageFilter,
 } from "../utils/firstStageFilter";
 import { HashMode } from "../utils/verityApi";
+import { stampMonitorWatermark } from "../utils/monitorWatermark";
 
 type ShareVariant = "original" | "proved";
 interface CaptureContext {
@@ -70,6 +71,7 @@ export default function CameraScreen({
   onBack,
 }: CameraScreenProps) {
   const cameraRef = useRef<CameraView>(null);
+  const lastRegisterAtRef = useRef(0);
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [captureContext, setCaptureContext] = useState<CaptureContext | null>(null);
@@ -80,6 +82,7 @@ export default function CameraScreen({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [selectedShareVariant, setSelectedShareVariant] =
     useState<ShareVariant>("proved");
+  const [monitorCaptureMode, setMonitorCaptureMode] = useState(false);
 
   if (!permission) {
     return (
@@ -119,7 +122,10 @@ export default function CameraScreen({
       });
 
       if (photo?.uri) {
-        setCapturedUri(photo.uri);
+        const processedUri = monitorCaptureMode
+          ? await stampMonitorWatermark(photo.uri)
+          : photo.uri;
+        setCapturedUri(processedUri);
         setCaptureContext({
           captureTimestamp: Date.now(),
           gps: extractGpsFromExif(photo.exif),
@@ -127,7 +133,10 @@ export default function CameraScreen({
         setFilterResult(null);
         setIsAnalyzing(true);
         try {
-          const result = await runFirstStageFilter(photo.uri);
+          const result = await runFirstStageFilter(processedUri, {
+            // [각주1] 모니터 촬영 모드에서는 모아레(주기성) 감지를 건너뜁니다.
+            skipPeriodicity: monitorCaptureMode,
+          });
           setFilterResult(result);
         } catch {
           setFilterResult({
@@ -138,6 +147,8 @@ export default function CameraScreen({
               blurVariance: 0,
               periodicityScore: 0,
               metadataRisk: 0,
+              antiSpoofScore: null,
+              antiSpoofModel: null,
             },
           });
         } finally {
@@ -151,6 +162,13 @@ export default function CameraScreen({
 
   const handleRegister = async (mode: HashMode) => {
     if (!capturedUri) return;
+
+    const now = Date.now();
+    const elapsedMs = now - lastRegisterAtRef.current;
+    if (elapsedMs < 1000) {
+      Alert.alert("잠시만요", "사진 등록은 1초에 1회만 가능합니다.");
+      return;
+    }
 
     if (isAnalyzing) {
       Alert.alert("검증 중", "사진 검증이 끝난 뒤 등록할 수 있습니다.");
@@ -176,6 +194,7 @@ export default function CameraScreen({
           text: "계속 진행",
           style: "default",
           onPress: () => {
+            lastRegisterAtRef.current = Date.now();
             void onRegisterPhoto(
               capturedUri,
               mode,
@@ -184,6 +203,10 @@ export default function CameraScreen({
                 blurVariance: filterResult?.metrics.blurVariance ?? null,
                 periodicityScore: filterResult?.metrics.periodicityScore ?? null,
                 metadataRisk: filterResult?.metrics.metadataRisk ?? null,
+                antiSpoofScore: filterResult?.metrics.antiSpoofScore ?? null,
+                antiSpoofModel: filterResult?.metrics.antiSpoofModel ?? null,
+                monitorCaptureMode,
+                monitorWatermarkApplied: monitorCaptureMode,
                 captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
                 gps: captureContext?.gps ?? null,
               }
@@ -194,10 +217,15 @@ export default function CameraScreen({
       return;
     }
 
+    lastRegisterAtRef.current = Date.now();
     await onRegisterPhoto(capturedUri, mode, filterResult?.score, {
       blurVariance: filterResult?.metrics.blurVariance ?? null,
       periodicityScore: filterResult?.metrics.periodicityScore ?? null,
       metadataRisk: filterResult?.metrics.metadataRisk ?? null,
+      antiSpoofScore: filterResult?.metrics.antiSpoofScore ?? null,
+      antiSpoofModel: filterResult?.metrics.antiSpoofModel ?? null,
+      monitorCaptureMode,
+      monitorWatermarkApplied: monitorCaptureMode,
       captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
       gps: captureContext?.gps ?? null,
     });
@@ -209,6 +237,7 @@ export default function CameraScreen({
     setIsAnalyzing(false);
     setCaptureContext(null);
     setSelectedShareVariant("proved");
+    setMonitorCaptureMode(false);
     onReset();
   };
 
@@ -291,13 +320,28 @@ export default function CameraScreen({
             </View>
           )}
 
+          {monitorCaptureMode && (
+            <View style={styles.monitorBadge}>
+              <Text style={styles.monitorBadgeText}>
+                MONITOR 워터마크 적용됨 (해시 생성에 포함)
+              </Text>
+            </View>
+          )}
+
           {isAnalyzing && (
             <View style={styles.filterCard}>
               <ActivityIndicator size="small" color="#9945ff" />
               <Text style={styles.filterCardTitle}>1차 필터 검증 중...</Text>
               <Text style={styles.filterCardDesc}>
-                화면 재촬영 가능성(블러/패턴/메타데이터)을 검사하고 있습니다.
+                {monitorCaptureMode
+                  ? "모니터 촬영 모드로 블러/메타데이터 중심 검증을 진행하고 있습니다."
+                  : "화면 재촬영 가능성(블러/패턴/메타데이터)을 검사하고 있습니다."}
               </Text>
+              {monitorCaptureMode && (
+                <Text style={styles.filterReason}>
+                  • 모니터 촬영 모드: 모아레(주기성) 감지는 비활성화됩니다.
+                </Text>
+              )}
             </View>
           )}
 
@@ -435,7 +479,7 @@ export default function CameraScreen({
                   onPress={() => handleRegister("sha256")}
                 >
                   <Ionicons name="shield-checkmark" size={20} color="#0f0f23" />
-                  <Text style={styles.registerText}>SHA-256 + TEE 루트</Text>
+                  <Text style={styles.registerText}>SHA-256 + pHash 제출 (1분 배치)</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -519,7 +563,17 @@ export default function CameraScreen({
       </CameraView>
 
       <View style={styles.cameraControls}>
-        <View style={{ width: 48 }} />
+        <TouchableOpacity
+          style={[
+            styles.monitorModeButton,
+            monitorCaptureMode && styles.monitorModeButtonActive,
+          ]}
+          onPress={() => setMonitorCaptureMode((prev) => !prev)}
+        >
+          <Text style={styles.monitorModeButtonText}>
+            {monitorCaptureMode ? "MONITOR ON" : "MONITOR OFF"}
+          </Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.captureButton} onPress={takePicture}>
           <View style={styles.captureButtonInner} />
         </TouchableOpacity>
@@ -886,6 +940,40 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     borderRadius: 8,
     backgroundColor: "#fff",
+  },
+  monitorModeButton: {
+    minWidth: 98,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#4b4b71",
+    backgroundColor: "#2a2a4a",
+    alignItems: "center",
+  },
+  monitorModeButtonActive: {
+    borderColor: "#f2c94c",
+    backgroundColor: "#f2c94c33",
+  },
+  monitorModeButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  monitorBadge: {
+    width: "100%",
+    marginBottom: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#f2c94c77",
+    backgroundColor: "#f2c94c22",
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
+  monitorBadgeText: {
+    color: "#f2c94c",
+    fontSize: 12,
+    fontWeight: "700",
   },
 });
 

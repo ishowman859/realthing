@@ -1,5 +1,6 @@
 import * as FileSystem from "expo-file-system";
 import Constants from "expo-constants";
+import { Platform } from "react-native";
 
 export type HashMode = "sha256" | "phash";
 export type MediaType = "photo" | "video";
@@ -57,10 +58,110 @@ export interface VerificationAssetRecord {
   createdAt: number;
 }
 
+export interface AntiSpoofResult {
+  // [각주1] 0~1 범위에서 스푸핑(재촬영) 가능성 확률입니다.
+  spoofProbability: number;
+  // [각주2] 서버에서 사용한 모델 식별값입니다.
+  model: string;
+}
+
 const STORAGE_FILE = `${FileSystem.documentDirectory}verity-assets.json`;
 const VERIFY_BASE_URL = "https://verify.verity.app/v";
-const API_BASE_URL =
-  (Constants.expoConfig?.extra?.verityApiUrl as string | undefined) || "";
+const API_BASE_URL = resolveApiBaseUrl();
+
+// [각주1] 로컬 개발 시 플랫폼별로 접속 가능한 주소를 자동 선택합니다.
+// - Android 에뮬레이터: localhost 대신 10.0.2.2 사용
+// - iOS 시뮬레이터/웹: localhost 사용
+function resolveApiBaseUrl(): string {
+  const configured =
+    (Constants.expoConfig?.extra?.verityApiUrl as string | undefined) || "";
+  if (!configured) {
+    return Platform.OS === "android"
+      ? "http://10.0.2.2:4000"
+      : "http://localhost:4000";
+  }
+  if (
+    Platform.OS === "android" &&
+    (configured.includes("localhost") || configured.includes("127.0.0.1"))
+  ) {
+    return configured
+      .replace("localhost", "10.0.2.2")
+      .replace("127.0.0.1", "10.0.2.2");
+  }
+  return configured;
+}
+
+export interface Sha256IngestInput {
+  owner: string;
+  sha256: string;
+  /** 사진: 흑백 근사 pHash / 동영상: 대표 프레임(첫 키프레임) pHash */
+  phash?: string | null;
+  mediaType?: MediaType;
+  serial?: string;
+  capturedTimestampMs?: number;
+  aiRiskScore?: number;
+  metadata?: Record<string, unknown>;
+}
+
+/** 기기에서 계산한 SHA-256(+선택 pHash)을 서버로 보냅니다. 서버가 수신 시각 기준 1분 버킷으로 배치합니다. */
+export async function registerSha256Ingest(
+  input: Sha256IngestInput
+): Promise<VerificationAssetRecord> {
+  if (API_BASE_URL) {
+    try {
+      return await registerSha256IngestRemote(input);
+    } catch {
+      return registerAssetLocal({
+        owner: input.owner,
+        mode: "sha256",
+        mediaType: input.mediaType ?? "photo",
+        serial: input.serial,
+        sha256: input.sha256,
+        phash: input.phash ?? undefined,
+        capturedTimestampMs: input.capturedTimestampMs,
+        aiRiskScore: input.aiRiskScore,
+        metadata: input.metadata,
+        chainTxSignature: null,
+      });
+    }
+  }
+  return registerAssetLocal({
+    owner: input.owner,
+    mode: "sha256",
+    mediaType: input.mediaType ?? "photo",
+    serial: input.serial,
+    sha256: input.sha256,
+    phash: input.phash ?? undefined,
+    capturedTimestampMs: input.capturedTimestampMs,
+    aiRiskScore: input.aiRiskScore,
+    metadata: input.metadata,
+    chainTxSignature: null,
+  });
+}
+
+async function registerSha256IngestRemote(
+  input: Sha256IngestInput
+): Promise<VerificationAssetRecord> {
+  const response = await fetch(`${API_BASE_URL}/v1/ingest/sha256`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      owner: input.owner,
+      sha256: input.sha256,
+      phash: input.phash ?? undefined,
+      mediaType: input.mediaType ?? "photo",
+      serial: input.serial,
+      capturedTimestampMs: input.capturedTimestampMs,
+      aiRiskScore: input.aiRiskScore,
+      metadata: input.metadata,
+    }),
+  });
+  if (!response.ok) {
+    const errText = await response.text().catch(() => "");
+    throw new Error(errText || "SHA-256 수집 요청 실패");
+  }
+  return (await response.json()) as VerificationAssetRecord;
+}
 
 export async function registerAsset(
   input: RegisterAssetInput
@@ -92,6 +193,31 @@ export async function listAssets(owner: string): Promise<VerificationAssetRecord
 export async function getSha256UsageCount(owner: string): Promise<number> {
   const items = await listAssets(owner);
   return items.filter((item) => item.mode === "sha256").length;
+}
+
+export async function checkAntiSpoof(
+  imageUri: string
+): Promise<AntiSpoofResult | null> {
+  if (!API_BASE_URL) return null;
+  try {
+    const imageBase64 = await FileSystem.readAsStringAsync(imageUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+    const response = await fetch(`${API_BASE_URL}/v1/anti-spoof/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ imageBase64 }),
+    });
+    if (!response.ok) return null;
+    const data = (await response.json()) as Partial<AntiSpoofResult>;
+    if (typeof data.spoofProbability !== "number") return null;
+    return {
+      spoofProbability: Math.max(0, Math.min(1, data.spoofProbability)),
+      model: data.model || "Silent-Face-Anti-Spoofing",
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function registerAssetRemote(

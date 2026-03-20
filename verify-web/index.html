@@ -110,6 +110,16 @@
       .empty {
         color: #9aa0b4;
       }
+      .monitor-alert {
+        margin-top: 10px;
+        border-radius: 12px;
+        border: 1px solid #f2c94c66;
+        background: #f2c94c1a;
+        color: #f2c94c;
+        padding: 10px 12px;
+        font-size: 13px;
+        line-height: 1.5;
+      }
     </style>
   </head>
   <body>
@@ -126,6 +136,7 @@
 
       <section class="card">
         <div id="statusBadge" class="status warn">조회 중...</div>
+        <div id="monitorAlert" class="monitor-alert" style="display: none"></div>
         <div class="grid">
           <div>
             <div id="labelSerial" class="label">일련번호</div>
@@ -339,6 +350,14 @@
       const DATE_LOCALE_MAP = { ko: "ko-KR", en: "en-US", ja: "ja-JP", zh: "zh-CN" };
       const DATE_LOCALE = DATE_LOCALE_MAP[ACTIVE_LANG] || "en-US";
 
+      // [각주19] 모니터 재촬영 의심 시 언어별 경고 문구를 노출합니다.
+      const alerts = {
+        ko: "모니터를 촬영한 것으로 의심되는 이미지는 인증이 제한될 수 있습니다.",
+        en: "Images suspected of being taken from a monitor may be restricted.",
+        ja: "モニターを撮影したと思われる画像は認証が制限される場合があります。",
+        zh: "疑似拍摄自显示器的图像可能会受到认证限制。",
+      };
+
       // [각주16] 번역 키 기반으로 문구를 가져옵니다. 일부 문구는 {score} 같은 변수 치환을 지원합니다.
       function t(key, vars = {}) {
         const dict = I18N[ACTIVE_LANG] || I18N.en;
@@ -374,6 +393,7 @@
         owner: document.getElementById("owner"),
         serial: document.getElementById("serial"),
         riskScore: document.getElementById("riskScore"),
+        monitorAlert: document.getElementById("monitorAlert"),
         sha256: document.getElementById("sha256"),
         phash: document.getElementById("phash"),
         assetImage: document.getElementById("assetImage"),
@@ -409,6 +429,20 @@
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return "-";
         return date.toLocaleString(DATE_LOCALE);
+      }
+
+      // [각주20] aiRiskScore가 경고 이상(35+)이면 모니터 재촬영 의심 안내를 보여줍니다.
+      function updateMonitorAlert(data) {
+        const risk = typeof data.aiRiskScore === "number" ? data.aiRiskScore : null;
+        const isMonitorSuspected = risk !== null && risk >= 35;
+        if (!isMonitorSuspected) {
+          el.monitorAlert.style.display = "none";
+          el.monitorAlert.textContent = "";
+          return;
+        }
+        const lang = alerts[ACTIVE_LANG] ? ACTIVE_LANG : "en";
+        el.monitorAlert.textContent = alerts[lang];
+        el.monitorAlert.style.display = "block";
       }
 
       // [각주3] URL에서 검증 토큰을 찾습니다.
@@ -471,6 +505,7 @@
         setText(el.riskScore, typeof data.aiRiskScore === "number" ? `${data.aiRiskScore} / 100` : "-");
         setText(el.sha256, data.sha256 || "-");
         setText(el.phash, data.phash || "-");
+        updateMonitorAlert(data);
 
         // [각주9] 이미지 URL이 있으면 이미지 표시, 없으면 안내 문구 표시
         if (data.assetUrl) {

@@ -1,16 +1,14 @@
 import { useState, useCallback } from "react";
 import { PublicKey, Transaction } from "@solana/web3.js";
 import { computePhash, computeSha256 } from "../utils/phash";
-import { buildRegisterTransaction } from "../utils/solana";
+import { extractVideoPhashKeyframes } from "../utils/videoPhash";
 import {
   HashMode,
   VerificationAssetRecord,
-  getSha256UsageCount,
   listAssets,
   registerAsset,
+  registerSha256Ingest,
 } from "../utils/verityApi";
-import { createTeeProofForSha256 } from "../utils/tee";
-
 export type RegistrationStatus =
   | "idle"
   | "computing_hash"
@@ -55,7 +53,8 @@ export function useVerityHash(
       imageUri: string,
       mode: HashMode,
       aiRiskScore?: number,
-      metadata?: Record<string, unknown>
+      metadata?: Record<string, unknown>,
+      opts?: { mediaType?: "photo" | "video" }
     ) => {
       if (!walletPublicKey) {
         setState((prev) => ({
@@ -77,44 +76,88 @@ export function useVerityHash(
           qrCodeUrl: null,
         }));
 
-        const [phash, sha256] = await Promise.all([
+        const serial = createSerial(mode);
+        let phash: string | null = null;
+        let sha256: string;
+
+        if (mode === "sha256") {
+          // [각주1] SHA-256 + pHash(선택). 사진은 동시 계산, 동영상은 구간 썸네일+장면전환 키프레임.
+          // 서버는 수신 시각 기준 1분 버킷으로 모아 머클 배치(processMinuteBatches)합니다.
+          const mediaType = opts?.mediaType ?? "photo";
+          let phashVal: string | null = null;
+          let mergedMeta: Record<string, unknown> = { ...(metadata ?? {}) };
+
+          if (mediaType === "video") {
+            const [sha256Computed, keyframes] = await Promise.all([
+              computeSha256(imageUri),
+              extractVideoPhashKeyframes(imageUri),
+            ]);
+            sha256 = sha256Computed;
+            phashVal = keyframes[0]?.phash ?? null;
+            mergedMeta = {
+              ...mergedMeta,
+              videoPhashKeyframes: keyframes,
+              videoPhashStrategy: "interval_ms+scene_hamming",
+            };
+          } else {
+            const [sha256Computed, phashComputed] = await Promise.all([
+              computeSha256(imageUri),
+              computePhash(imageUri),
+            ]);
+            sha256 = sha256Computed;
+            phashVal = phashComputed;
+          }
+
+          setState((prev) => ({
+            ...prev,
+            currentPhash: phashVal,
+            currentSha256: sha256,
+            status: "confirming",
+          }));
+
+          const record = await registerSha256Ingest({
+            owner: walletPublicKey.toBase58(),
+            sha256,
+            phash: phashVal ?? undefined,
+            mediaType,
+            serial,
+            capturedTimestampMs:
+              typeof mergedMeta.captureTimestamp === "number"
+                ? (mergedMeta.captureTimestamp as number)
+                : typeof metadata?.captureTimestamp === "number"
+                  ? metadata.captureTimestamp
+                  : Date.now(),
+            aiRiskScore,
+            metadata: mergedMeta,
+          });
+
+          setState((prev) => ({
+            ...prev,
+            status: "success",
+            txSignature: null,
+            verificationUrl: record.verificationUrl,
+            qrCodeUrl: record.qrCodeUrl,
+            records: [record, ...prev.records],
+          }));
+
+          return {
+            phash: phashVal,
+            sha256,
+            signature: null,
+            verificationUrl: record.verificationUrl,
+          };
+        }
+
+        const [phashComputed, sha256Computed] = await Promise.all([
           computePhash(imageUri),
           computeSha256(imageUri),
         ]);
+        phash = phashComputed;
+        sha256 = sha256Computed;
         setState((prev) => ({
           ...prev,
           currentPhash: phash,
           currentSha256: sha256,
-          status: mode === "sha256" ? "building_tx" : "confirming",
-        }));
-
-        let signature: string | null = null;
-        let teeProof = undefined;
-        const serial = createSerial(mode);
-        if (mode === "sha256") {
-          const usageCount = await getSha256UsageCount(walletPublicKey.toBase58());
-          if (usageCount >= 1) {
-            throw new Error("SHA-256 온체인 등록 무료 1회를 이미 사용했습니다");
-          }
-
-          teeProof = await createTeeProofForSha256({
-            owner: walletPublicKey.toBase58(),
-            sha256,
-            serial,
-          });
-
-          const transaction = await buildRegisterTransaction(
-            walletPublicKey,
-            sha256,
-            imageUri
-          );
-
-          setState((prev) => ({ ...prev, status: "awaiting_signature" }));
-          signature = await signAndSend(transaction);
-        }
-
-        setState((prev) => ({
-          ...prev,
           status: "confirming",
         }));
 
@@ -142,20 +185,25 @@ export function useVerityHash(
               : null,
           aiRiskScore,
           metadata,
-          chainTxSignature: signature,
-          teeProof,
+          chainTxSignature: null,
+          teeProof: undefined,
         });
 
         setState((prev) => ({
           ...prev,
           status: "success",
-          txSignature: signature,
+          txSignature: null,
           verificationUrl: record.verificationUrl,
           qrCodeUrl: record.qrCodeUrl,
           records: [record, ...prev.records],
         }));
 
-        return { phash, sha256, signature, verificationUrl: record.verificationUrl };
+        return {
+          phash,
+          sha256,
+          signature: null,
+          verificationUrl: record.verificationUrl,
+        };
       } catch (error: any) {
         setState((prev) => ({
           ...prev,

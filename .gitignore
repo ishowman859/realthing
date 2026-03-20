@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Env & secrets (keep .env.example tracked)
+.env
+.env.local
+.env.*.local
+*.pem
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
+
+# Build / caches
+dist/
+build/
+.expo/
+.expo-shared/
+*.tsbuildinfo
+.next/
+out/
+
+# Python (server/ai)
+__pycache__/
+.venv/
+venv/
+*.py[cod]
+server/ai/models/*
+!server/ai/models/.gitkeep
+
+# IDE (optional — uncomment to exclude)
+# .vscode/

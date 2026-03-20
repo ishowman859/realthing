@@ -32,3 +32,14 @@ npx serve .
 
 `vercel.json`에 SPA/토큰 URL 라우팅(`/v/:token`)이 포함되어 있습니다.
 
+## Admin 페이지
+
+- 경로: `/admin` (또는 `/admin.html`)
+- 필요값: `ADMIN_TOKEN`
+- 조회 API:
+  - `GET /v1/admin/health`
+  - `GET /v1/admin/assets?limit=50`
+  - `GET /v1/admin/batches?limit=30`
+
+`admin.html`에서 API Base URL과 관리자 토큰을 입력하면 최근 자산/배치 데이터를 확인할 수 있습니다.
+
