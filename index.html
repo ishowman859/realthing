@@ -4,99 +4,136 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Verity Verification</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <main class="wrap">
-      <h1 id="titleText" class="title">Verity 검증 페이지</h1>
-      <p id="subText" class="sub">
-        QR 또는 공유 URL로 접속한 자산의 원본성/유사성 검증 결과를 표시합니다.
-      </p>
+    <div class="page-bg" aria-hidden="true"></div>
+    <div class="page-noise" aria-hidden="true"></div>
 
-      <section class="card" id="uploadCard">
-        <div id="labelUpload" class="label">미디어 업로드</div>
-        <p id="uploadHelp" class="sub" style="margin-top: 0; font-size: 14px">
-          사진 또는 동영상을 올리면 서버가 해시를 계산하고 등록한 뒤 아래에 검증 결과를 표시합니다.
-        </p>
-        <div class="upload-row">
-          <input
-            id="fileInput"
-            type="file"
-            accept="image/*,video/*"
-            class="file-input"
+    <header class="site-header">
+      <div class="site-header__inner">
+        <div class="brand-lockup">
+          <img
+            id="brandLogo"
+            class="brand-logo"
+            src="logo.png"
+            alt=""
+            width="72"
+            height="72"
+            decoding="async"
           />
+          <div id="brandFallback" class="brand-fallback" hidden aria-hidden="true">V</div>
         </div>
-        <div class="upload-row" style="margin-top: 10px">
-          <input
-            id="ownerInput"
-            type="text"
-            class="text-input mono"
-            placeholder="owner (선택, 비우면 웹 게스트)"
-            autocomplete="off"
-          />
-          <button type="button" id="uploadButton" class="btn btn-primary">업로드 및 등록</button>
+        <div class="site-header__titles">
+          <p class="site-header__eyebrow" id="headerEyebrow">Verification</p>
+          <h1 id="titleText" class="site-header__title">Verity 검증 페이지</h1>
+          <p id="subText" class="site-header__sub">
+            QR 또는 공유 URL로 접속한 자산의 원본성/유사성 검증 결과를 표시합니다.
+          </p>
         </div>
-        <p id="uploadStatus" class="empty" style="margin-top: 10px; display: none"></p>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="card card--upload" id="uploadCard">
+        <div class="card__head">
+          <span class="card__icon" aria-hidden="true">↑</span>
+          <div>
+            <div id="labelUpload" class="label">미디어 업로드</div>
+            <p id="uploadHelp" class="card__lead">
+              사진 또는 동영상을 올리면 서버가 해시를 계산하고 등록한 뒤 아래에 검증 결과를 표시합니다.
+            </p>
+          </div>
+        </div>
+        <div class="upload-drop">
+          <div class="upload-row">
+            <input
+              id="fileInput"
+              type="file"
+              accept="image/*,video/*"
+              class="file-input"
+            />
+          </div>
+          <div class="upload-row upload-row--actions">
+            <input
+              id="ownerInput"
+              type="text"
+              class="text-input mono"
+              placeholder="owner (선택, 비우면 웹 게스트)"
+              autocomplete="off"
+            />
+            <button type="button" id="uploadButton" class="btn btn-primary">업로드 및 등록</button>
+          </div>
+          <p id="uploadStatus" class="upload-status" style="display: none"></p>
+        </div>
       </section>
 
-      <section class="card">
+      <section class="card card--glass">
         <div id="statusBadge" class="status warn">조회 중...</div>
         <div id="monitorAlert" class="monitor-alert" style="display: none"></div>
         <div class="grid">
-          <div>
+          <div class="field">
             <div id="labelSerial" class="label">일련번호</div>
             <div id="serial" class="value mono">-</div>
           </div>
-          <div>
+          <div class="field">
             <div id="labelMode" class="label">모드</div>
             <div id="mode" class="value">-</div>
           </div>
-          <div>
+          <div class="field">
             <div id="labelCreatedAt" class="label">생성 시각</div>
             <div id="createdAt" class="value">-</div>
           </div>
-          <div>
+          <div class="field">
             <div id="labelCapturedAt" class="label">촬영 시각(기기)</div>
             <div id="capturedAt" class="value">-</div>
           </div>
-          <div>
+          <div class="field">
             <div id="labelOnchainAt" class="label">온체인 시각</div>
             <div id="onchainAt" class="value">-</div>
           </div>
-          <div>
+          <div class="field">
             <div id="labelOwner" class="label">소유자</div>
             <div id="owner" class="value mono">-</div>
           </div>
-          <div>
+          <div class="field field--wide">
             <div id="labelRiskScore" class="label">AI 1차 점수</div>
             <div id="riskScore" class="value">-</div>
           </div>
         </div>
       </section>
 
-      <section class="card">
-        <div id="labelHashInfo" class="label">해시 정보</div>
+      <section class="card card--glass">
+        <div id="labelHashInfo" class="label label--section">해시 정보</div>
         <div class="grid">
-          <div>
+          <div class="field">
             <div class="label">SHA-256</div>
-            <div id="sha256" class="value mono">-</div>
+            <div id="sha256" class="value mono value--hash">-</div>
           </div>
-          <div>
+          <div class="field">
             <div class="label">pHash</div>
-            <div id="phash" class="value mono">-</div>
+            <div id="phash" class="value mono value--hash">-</div>
           </div>
         </div>
       </section>
 
-      <section class="card">
-        <div id="labelOriginalFile" class="label">원본 파일</div>
-        <img id="assetImage" class="img" alt="검증 자산 이미지" />
-        <p id="assetEmpty" class="empty">표시할 이미지 URL이 없습니다.</p>
+      <section class="card card--glass">
+        <div id="labelOriginalFile" class="label label--section">원본 파일</div>
+        <div class="media-frame">
+          <img id="assetImage" class="img" alt="검증 자산 이미지" />
+          <p id="assetEmpty" class="empty media-frame__empty">표시할 이미지 URL이 없습니다.</p>
+        </div>
       </section>
 
-      <section class="card">
+      <section class="card card--glass card--actions">
         <div id="labelActions" class="label">검증 액션</div>
-        <button id="recheckButton" class="btn">서버 재검증 요청</button>
+        <button id="recheckButton" type="button" class="btn btn-outline">서버 재검증 요청</button>
       </section>
     </main>
 
