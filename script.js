@@ -17,6 +17,7 @@ const API_BASE =
 const I18N = {
   ko: {
     htmlTitle: "Verity 검증 페이지",
+    verificationEyebrow: "검증",
     pageTitle: "Verity 검증 페이지",
     pageSub: "QR 또는 공유 URL로 접속한 자산의 원본성/유사성 검증 결과를 표시합니다.",
     serialLabel: "일련번호",
@@ -59,6 +60,7 @@ const I18N = {
   },
   en: {
     htmlTitle: "Verity Verification",
+    verificationEyebrow: "Verification",
     pageTitle: "Verity Verification",
     pageSub: "Displays authenticity/similarity verification results for assets opened via QR or shared URL.",
     serialLabel: "Serial",
@@ -101,6 +103,7 @@ const I18N = {
   },
   ja: {
     htmlTitle: "Verity 検証ページ",
+    verificationEyebrow: "検証",
     pageTitle: "Verity 検証ページ",
     pageSub: "QR または共有 URL で開いたアセットの真正性/類似性の検証結果を表示します。",
     serialLabel: "シリアル番号",
@@ -142,6 +145,7 @@ const I18N = {
   },
   zh: {
     htmlTitle: "Verity 验证页面",
+    verificationEyebrow: "验证",
     pageTitle: "Verity 验证页面",
     pageSub: "显示通过二维码或分享链接访问的资产真伪/相似性验证结果。",
     serialLabel: "序列号",
@@ -267,9 +271,28 @@ const el = {
   recheckButton: document.getElementById("recheckButton"),
 };
 
+function initBranding() {
+  const img = document.getElementById("brandLogo");
+  const fallback = document.getElementById("brandFallback");
+  const custom = __params.get("logo");
+  if (img) {
+    if (custom) img.src = custom;
+    if (fallback) {
+      img.addEventListener("error", () => {
+        img.classList.add("is-hidden");
+        const crop = img.closest(".brand-mark-crop");
+        if (crop) crop.hidden = true;
+        fallback.hidden = false;
+      });
+    }
+  }
+}
+
 function applyStaticI18n() {
   document.documentElement.lang = ACTIVE_LANG;
   document.title = t("htmlTitle");
+  const eyebrow = document.getElementById("headerEyebrow");
+  if (eyebrow) eyebrow.textContent = t("verificationEyebrow");
   setText(el.titleText, t("pageTitle"));
   setText(el.subText, t("pageSub"));
   setText(el.labelSerial, t("serialLabel"));
@@ -477,6 +500,7 @@ function bindUpload() {
 }
 
 async function main() {
+  initBranding();
   applyStaticI18n();
   sessionToken = getTokenFromUrl();
   bindUpload();

@@ -2,6 +2,11 @@
 
 검증 UI는 **`index.html`**, **`style.css`**, **`script.js`** — 관리자는 **`admin.html`**, **`admin.css`**, **`admin.js`** 입니다. API는 별도 `server/`에서 제공합니다.
 
+### 로고 (선택)
+
+저장소 **루트**에 **`logo.png`** (또는 `logo.webp`로 바꾸려면 `index.html`의 `src` 수정) 를 두면 상단 헤더에 표시됩니다. 파일이 없으면 **그라데이션 V** 마크가 대신 나옵니다.  
+임시로 URL만 쓰려면 `?logo=https://...` 로 이미지 주소를 넘길 수 있습니다.
+
 검증 페이지에서 **사진/동영상 파일을 업로드**하면 `POST /v1/verify/upload`로 등록되고, 서버가 `{ asset, verification }` JSON으로 응답합니다 (로컬은 `npx serve .` + 서버 `npm run dev`, Pages는 `?api=` 필요).
 
 ## 로컬 실행

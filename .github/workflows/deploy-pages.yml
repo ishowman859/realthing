@@ -51,6 +51,8 @@ jobs:
           mkdir -p _pages
           cp index.html style.css script.js admin.html admin.css admin.js .nojekyll _pages/
           cp index.html _pages/404.html
+          if [ -f logo.png ]; then cp logo.png _pages/; fi
+          if [ -f logo.webp ]; then cp logo.webp _pages/; fi
 
       - uses: actions/upload-pages-artifact@v3
         with:
