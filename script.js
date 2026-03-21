@@ -276,12 +276,15 @@ function initBranding() {
   const fallback = document.getElementById("brandFallback");
   const custom = __params.get("logo");
   if (img) {
-    if (custom) img.src = custom;
+    if (custom) {
+      img.src = custom;
+      img.classList.add("brand-logo--raster");
+    }
     if (fallback) {
       img.addEventListener("error", () => {
         img.classList.add("is-hidden");
-        const crop = img.closest(".brand-mark-crop");
-        if (crop) crop.hidden = true;
+        const wrap = img.closest(".brand-mark-wrap");
+        if (wrap) wrap.hidden = true;
         fallback.hidden = false;
       });
     }

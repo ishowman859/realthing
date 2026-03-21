@@ -53,6 +53,7 @@ jobs:
           cp index.html _pages/404.html
           if [ -f logo.png ]; then cp logo.png _pages/; fi
           if [ -f logo.webp ]; then cp logo.webp _pages/; fi
+          if [ -f logo-mark.svg ]; then cp logo-mark.svg _pages/; fi
 
       - uses: actions/upload-pages-artifact@v3
         with:

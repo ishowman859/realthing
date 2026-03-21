@@ -2,10 +2,10 @@
 
 검증 UI는 **`index.html`**, **`style.css`**, **`script.js`** — 관리자는 **`admin.html`**, **`admin.css`**, **`admin.js`** 입니다. API는 별도 `server/`에서 제공합니다.
 
-### 로고 (선택)
+### 로고
 
-저장소 **루트**에 **`logo.png`** (또는 `logo.webp`로 바꾸려면 `index.html`의 `src` 수정) 를 두면 상단 헤더에 표시됩니다. 파일이 없으면 **그라데이션 V** 마크가 대신 나옵니다.  
-임시로 URL만 쓰려면 `?logo=https://...` 로 이미지 주소를 넘길 수 있습니다.
+기본 헤더 마크는 투명 배경 **`logo-mark.svg`** 입니다. 공식 실루엣 PNG만 있으면 디자인 툴로 누끼 딴 뒤 SVG/PNG로 바꿔 넣거나, `logo-mark.svg` 경로만 교체하면 됩니다.  
+전체 **`logo.png`** 는 배포에 포함되며, **`?logo=https://...`** 로 다른 이미지를 쓸 수 있습니다 (흰 배경 PNG는 CSS에서 곱하기 블렌드로 배경을 줄입니다).
 
 검증 페이지에서 **사진/동영상 파일을 업로드**하면 `POST /v1/verify/upload`로 등록되고, 서버가 `{ asset, verification }` JSON으로 응답합니다 (로컬은 `npx serve .` + 서버 `npm run dev`, Pages는 `?api=` 필요).
 
@@ -32,6 +32,7 @@ npx serve .
 1. **Settings → Pages → Source: GitHub Actions**
 2. `main` 푸시 또는 Actions에서 워크플로 수동 실행
 3. 첫 배포 시 `github-pages` Environment 승인이 필요할 수 있음
+4. 예전 다크 UI가 보이면 **Source가 Actions인지** 확인하고, 브라우저에서 **강력 새로고침**(Ctrl+F5) 또는 시크릿 창으로 열어보세요. `style.css?v=…` 쿼리로 캐시를 끊습니다.
 
 `/v/{토큰}` 은 `404.html`(=`index.html` 복사본)로 처리합니다. **`.nojekyll`** 로 Jekyll 비활성화.
 

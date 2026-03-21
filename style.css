@@ -64,32 +64,35 @@ body {
   align-items: center;
 }
 
-/* PNG 상단 기하 아이콘만 보이게 하고, 하단 "VERITY" 글자는 잘라냄 */
-.brand-mark-crop {
-  width: 50px;
-  height: 44px;
-  overflow: hidden;
+/* SVG 마크(누끼) 또는 ?logo= 로 넘긴 래스터 */
+.brand-mark-wrap {
+  width: 52px;
+  height: 46px;
   flex-shrink: 0;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: center;
 }
 
 .brand-logo {
   display: block;
-}
-
-.brand-logo--mark {
-  width: 50px;
+  width: 48px;
   height: auto;
-  max-width: none;
+  max-height: 46px;
   margin: 0;
   padding: 0;
   border: none;
   border-radius: 0;
   box-shadow: none;
   background: transparent;
-  /* 흰 배경은 페이지와 곱해져 사라지고, 아이콘만 어둡게 보임 */
+}
+
+/* 흰 배경 PNG 등 커스텀 로고일 때만 배경 제거 느낌 */
+.brand-logo--raster {
+  width: 50px;
+  max-height: 44px;
+  object-fit: cover;
+  object-position: center top;
   mix-blend-mode: multiply;
 }
 
@@ -98,8 +101,8 @@ body {
 }
 
 .brand-fallback {
-  width: 50px;
-  height: 44px;
+  width: 52px;
+  height: 46px;
   border-radius: 10px;
   display: grid;
   place-items: center;
