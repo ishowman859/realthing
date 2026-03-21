@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="style.css?v=3" />
+    <link rel="stylesheet" href="style.css?v=4" />
   </head>
   <body>
     <div class="page-bg" aria-hidden="true"></div>
@@ -126,6 +126,44 @@
         </div>
       </section>
 
+      <section class="card card--glass card--merkle" id="merkleCard">
+        <div id="labelMerkleSection" class="label label--section">머클 경로 검증</div>
+        <p id="merkleIntro" class="merkle-intro"></p>
+        <div id="merklePending" class="merkle-pending" hidden></div>
+        <div id="merkleActive" class="merkle-active" hidden>
+          <div class="grid merkle-grid">
+            <div class="field">
+              <div id="labelMerkleRoot" class="label">공개 머클 루트</div>
+              <div id="merkleRootVal" class="value mono value--hash">-</div>
+            </div>
+            <div class="field">
+              <div id="labelMerkleLeaf" class="label">리프 해시 (직렬화)</div>
+              <div id="merkleLeafVal" class="value mono value--hash">-</div>
+            </div>
+            <div class="field field--wide">
+              <div id="labelMerklePathLen" class="label">이웃 해시 개수 (경로 길이)</div>
+              <div id="merklePathLen" class="value">-</div>
+            </div>
+          </div>
+          <details class="merkle-details">
+            <summary id="merkleProofSummary">이웃 해시 목록</summary>
+            <ol id="merkleProofList" class="merkle-proof-list mono"></ol>
+          </details>
+          <div class="merkle-actions">
+            <button type="button" id="merkleVerifyBtn" class="btn btn-outline"></button>
+            <p id="merkleVerifyResult" class="merkle-verify-result" role="status"></p>
+          </div>
+          <div class="merkle-local-file" id="merkleLocalWrap">
+            <div id="labelMerkleLocal" class="label"></div>
+            <div class="merkle-local-row">
+              <input type="file" id="merkleLocalFile" class="merkle-file-input" />
+              <button type="button" id="merkleCompareBtn" class="btn btn-outline"></button>
+            </div>
+            <p id="merkleCompareResult" class="merkle-verify-result" role="status"></p>
+          </div>
+        </div>
+      </section>
+
       <section class="card card--glass">
         <div id="labelOriginalFile" class="label label--section">원본 파일</div>
         <div class="media-frame">
@@ -140,6 +178,6 @@
       </section>
     </main>
 
-    <script src="script.js?v=3" defer></script>
+    <script src="script.js?v=4" defer></script>
   </body>
 </html>

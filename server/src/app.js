@@ -690,6 +690,8 @@ function toClientRecord(row, verifyBase) {
 function toVerificationView(row, merkleCheck = null) {
   return {
     token: row.token,
+    /** 머클 리프 직렬화(createAssetLeafHash)에 필요 — 브라우저가 서버 없이 리프 재계산 시 사용 */
+    assetId: row.id,
     serial: row.serial,
     owner: row.owner,
     mode: row.mode,

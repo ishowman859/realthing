@@ -350,6 +350,107 @@ body {
   text-align: left;
 }
 
+/* Merkle path (client verify) */
+.card--merkle {
+  text-align: left;
+}
+
+.merkle-intro {
+  margin: 0 0 16px;
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.merkle-pending {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  background: rgba(241, 245, 249, 0.95);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.merkle-grid {
+  margin-bottom: 14px;
+}
+
+.merkle-details {
+  margin: 14px 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  padding: 10px 14px;
+  background: rgba(248, 250, 252, 0.6);
+}
+
+.merkle-details summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.merkle-proof-list {
+  margin: 12px 0 4px;
+  padding-left: 1.25rem;
+  font-size: 11px;
+  line-height: 1.65;
+  word-break: break-all;
+}
+
+.merkle-proof-list li {
+  margin-bottom: 6px;
+}
+
+.merkle-actions {
+  margin-top: 16px;
+  padding-top: 4px;
+}
+
+.merkle-verify-result {
+  margin: 10px 0 0;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  min-height: 1.25em;
+}
+
+.merkle-verify-result.is-ok {
+  color: #047857;
+  font-weight: 600;
+}
+
+.merkle-verify-result.is-bad {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.merkle-verify-result.is-muted {
+  color: var(--text-muted);
+}
+
+.merkle-local-file {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.merkle-local-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.merkle-file-input {
+  flex: 1;
+  min-width: 180px;
+  font-size: 13px;
+  font-family: var(--font);
+}
+
 /* Buttons & inputs */
 .btn {
   background: #f1f5f9;
