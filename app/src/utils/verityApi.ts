@@ -66,22 +66,39 @@ export interface AntiSpoofResult {
 }
 
 const STORAGE_FILE = `${FileSystem.documentDirectory}verity-assets.json`;
-/** 검증 페이지 베이스 (로컬 폴백·QR 링크). 서버는 `VERIFY_BASE_URL` 환경변수로 동일하게 맞추는 것을 권장. */
-/** 서버 `VERIFY_BASE_URL` 과 맞추면 좋음. 기본 패턴: …/v/{token} (정적 검증 페이지가 따로 있으면 그 URL로) */
+
+/** 검증 링크 베이스 (로컬 폴백). 서버 `VERIFY_BASE_URL` 과 맞출 것. */
 const VERIFY_BASE_URL = "http://98.84.127.220:4000/v";
+
+/**
+ * 릴리스 APK에서 `Constants.expoConfig`가 비는 경우가 있어, extra가 없어도 항상 쓸 기본 API.
+ * 로컬 개발: app.json extra / EXPO_PUBLIC_VERITY_API_URL / 에뮬레이터 localhost 치환.
+ */
+const DEFAULT_VERITY_API_BASE = "http://98.84.127.220:4000";
+
 const API_BASE_URL = resolveApiBaseUrl();
 
-// 로컬 API 주소: Android 에뮬레이터만 localhost → 10.0.2.2 (호스트 PC).
-// 실제 폰은 localhost/127.0.0.1이 폰 자신을 가리키므로 EXPO_PUBLIC_VERITY_API_URL 로 PC LAN IP 지정.
+function readExtraApiUrl(): string {
+  const fromExpo = Constants.expoConfig?.extra?.verityApiUrl;
+  if (typeof fromExpo === "string" && fromExpo.trim()) return fromExpo.trim();
+  const manifest = Constants.manifest as { extra?: { verityApiUrl?: string } } | null;
+  const fromManifest = manifest?.extra?.verityApiUrl;
+  if (typeof fromManifest === "string" && fromManifest.trim()) return fromManifest.trim();
+  const envUrl =
+    typeof process !== "undefined" && process.env?.EXPO_PUBLIC_VERITY_API_URL
+      ? String(process.env.EXPO_PUBLIC_VERITY_API_URL).trim()
+      : "";
+  return envUrl;
+}
+
 function resolveApiBaseUrl(): string {
-  const configured = (
-    (Constants.expoConfig?.extra?.verityApiUrl as string | undefined) || ""
-  ).trim();
+  let configured = readExtraApiUrl();
   if (!configured) {
-    if (Platform.OS === "android") {
-      return Constants.isDevice ? "" : "http://10.0.2.2:4000";
+    if (Platform.OS === "android" && !Constants.isDevice) {
+      configured = "http://localhost:4000";
+    } else {
+      configured = DEFAULT_VERITY_API_BASE;
     }
-    return "http://98.84.127.220:4000";
   }
   if (
     Platform.OS === "android" &&
