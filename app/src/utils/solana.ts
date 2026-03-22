@@ -35,7 +35,7 @@ export const CHAIN_CONFIG = {
     ? "ws://localhost:8900"
     : "wss://rpc.verity.io/ws",
   explorerUrl: __DEV__
-    ? "http://98.84.127.220:3000"
+    ? "http://98.84.127.220:4000"
     : "https://explorer.verity.io",
 };
 

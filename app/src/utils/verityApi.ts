@@ -67,7 +67,8 @@ export interface AntiSpoofResult {
 
 const STORAGE_FILE = `${FileSystem.documentDirectory}verity-assets.json`;
 /** 검증 페이지 베이스 (로컬 폴백·QR 링크). 서버는 `VERIFY_BASE_URL` 환경변수로 동일하게 맞추는 것을 권장. */
-const VERIFY_BASE_URL = "http://98.84.127.220:3000/verify";
+/** 서버 `VERIFY_BASE_URL` 과 맞추면 좋음. 기본 패턴: …/v/{token} (정적 검증 페이지가 따로 있으면 그 URL로) */
+const VERIFY_BASE_URL = "http://98.84.127.220:4000/v";
 const API_BASE_URL = resolveApiBaseUrl();
 
 // 로컬 API 주소: Android 에뮬레이터만 localhost → 10.0.2.2 (호스트 PC).
@@ -80,7 +81,7 @@ function resolveApiBaseUrl(): string {
     if (Platform.OS === "android") {
       return Constants.isDevice ? "" : "http://10.0.2.2:4000";
     }
-    return "http://98.84.127.220:3000";
+    return "http://98.84.127.220:4000";
   }
   if (
     Platform.OS === "android" &&

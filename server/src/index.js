@@ -7,8 +7,8 @@ const port = Number(process.env.PORT || 4000);
 
 initDatabase()
   .then(() => {
-    app.listen(port, () => {
-      console.log(`Verity server listening on :${port}`);
+    app.listen(port, "0.0.0.0", () => {
+      console.log(`Verity server listening on 0.0.0.0:${port}`);
     });
     setInterval(() => {
       void processMinuteBatches();
