@@ -66,23 +66,26 @@ export interface AntiSpoofResult {
 }
 
 const STORAGE_FILE = `${FileSystem.documentDirectory}verity-assets.json`;
-const VERIFY_BASE_URL = "https://verify.verity.app/v";
+/** 검증 페이지 베이스 (로컬 폴백·QR 링크). 서버는 `VERIFY_BASE_URL` 환경변수로 동일하게 맞추는 것을 권장. */
+const VERIFY_BASE_URL = "http://98.84.127.220:3000/verify";
 const API_BASE_URL = resolveApiBaseUrl();
 
-// [각주1] 로컬 개발 시 플랫폼별로 접속 가능한 주소를 자동 선택합니다.
-// - Android 에뮬레이터: localhost 대신 10.0.2.2 사용
-// - iOS 시뮬레이터/웹: localhost 사용
+// 로컬 API 주소: Android 에뮬레이터만 localhost → 10.0.2.2 (호스트 PC).
+// 실제 폰은 localhost/127.0.0.1이 폰 자신을 가리키므로 EXPO_PUBLIC_VERITY_API_URL 로 PC LAN IP 지정.
 function resolveApiBaseUrl(): string {
-  const configured =
-    (Constants.expoConfig?.extra?.verityApiUrl as string | undefined) || "";
+  const configured = (
+    (Constants.expoConfig?.extra?.verityApiUrl as string | undefined) || ""
+  ).trim();
   if (!configured) {
-    return Platform.OS === "android"
-      ? "http://10.0.2.2:4000"
-      : "http://localhost:4000";
+    if (Platform.OS === "android") {
+      return Constants.isDevice ? "" : "http://10.0.2.2:4000";
+    }
+    return "http://98.84.127.220:3000";
   }
   if (
     Platform.OS === "android" &&
-    (configured.includes("localhost") || configured.includes("127.0.0.1"))
+    (configured.includes("localhost") || configured.includes("127.0.0.1")) &&
+    !Constants.isDevice
   ) {
     return configured
       .replace("localhost", "10.0.2.2")

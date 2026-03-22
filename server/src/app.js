@@ -34,6 +34,8 @@ import {
   isProbablyVideoMime,
   sha256Buffer,
 } from "./mediaHash.js";
+import { enrichMetadataWithOpenCellid } from "./cellGpsAnalysis.js";
+import { countOpenCellidRows } from "./opencellid.js";
 
 const verifyBaseUrl = process.env.VERIFY_BASE_URL || "https://verify.verity.app/v";
 const corsOrigin = (process.env.CORS_ORIGIN || "*")
@@ -281,11 +283,12 @@ export function createApp() {
       const serial = asString(body.serial) || createSerial(mode);
       const aiRiskScore = toIntOrNull(body.aiRiskScore);
       const chainTxSignature = asString(body.chainTxSignature) || null;
-      const metadata = parseMaybeJson(body.metadata);
+      let metadata = parseMaybeJson(body.metadata);
       const teeProof = parseMaybeJson(body.teeProof);
       const capturedTimestampMs = extractCapturedTimestamp(metadata, teeProof);
       const minuteBucket = minuteBucketIso(capturedTimestampMs);
       const gps = extractGps(metadata);
+      metadata = await enrichMetadataWithOpenCellid(metadata, gps);
       const batch = await getBatchSlotForMinuteBucket(minuteBucket);
 
       let duplicateScore = null;
@@ -377,7 +380,7 @@ export function createApp() {
           : phash
             ? "sha256_phash"
             : "sha256_only";
-      const mergedMetadata =
+      let mergedMetadata =
         metadata && typeof metadata === "object"
           ? {
               ...metadata,
@@ -392,6 +395,7 @@ export function createApp() {
             };
 
       const gps = extractGps(mergedMetadata);
+      mergedMetadata = await enrichMetadataWithOpenCellid(mergedMetadata, gps);
       const batch = await getBatchSlotForMinuteBucket(minuteBucket);
       const id = uuidv4();
       const token = createToken();
@@ -462,6 +466,19 @@ export function createApp() {
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: "관리자 자산 목록 조회 실패" });
+    }
+  });
+
+  app.get("/v1/admin/opencellid/status", async (_req, res) => {
+    try {
+      const rowCount = await countOpenCellidRows();
+      res.json({
+        rowCount,
+        hasData: rowCount > 0,
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: "OpenCellID 테이블 상태 조회 실패" });
     }
   });
 
@@ -781,8 +798,27 @@ function extractGps(metadata) {
   const m = metadata && typeof metadata === "object" ? metadata : {};
   const lat = Number(m.gpsLat ?? m.gps?.lat);
   const lng = Number(m.gpsLng ?? m.gps?.lng);
-  if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
-  return { lat, lng };
+  if (!Number.isNaN(lat) && !Number.isNaN(lng)) return { lat, lng };
+
+  const fused = m.androidRadioRawSnapshot?.gnss?.fusedLocation;
+  if (
+    fused &&
+    typeof fused.latitude === "number" &&
+    typeof fused.longitude === "number"
+  ) {
+    return { lat: fused.latitude, lng: fused.longitude };
+  }
+
+  const derived = m.gnssDerivedLocation;
+  if (
+    derived &&
+    typeof derived.latitude === "number" &&
+    typeof derived.longitude === "number"
+  ) {
+    return { lat: derived.latitude, lng: derived.longitude };
+  }
+
+  return null;
 }
 
 function minuteBucketIso(tsMs) {

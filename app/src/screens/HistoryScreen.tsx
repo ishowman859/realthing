@@ -8,9 +8,12 @@ import {
   FlatList,
   ActivityIndicator,
   Linking,
+  Platform,
+  StatusBar,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { VerificationAssetRecord } from "../utils/verityApi";
+import { ui } from "../theme/tokens";
 
 interface HistoryScreenProps {
   records: VerificationAssetRecord[];
@@ -18,6 +21,16 @@ interface HistoryScreenProps {
   onLoadRecords: () => void;
   onBack: () => void;
 }
+
+const cardShadow =
+  Platform.OS === "ios"
+    ? {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+      }
+    : { elevation: 1 };
 
 export default function HistoryScreen({
   records,
@@ -49,29 +62,31 @@ export default function HistoryScreen({
     item: VerificationAssetRecord;
     index: number;
   }) => (
-    <View style={styles.card}>
+    <View style={[styles.card, cardShadow]}>
       <View style={styles.cardHeader}>
         <View style={styles.indexBadge}>
-          <Text style={styles.indexText}>#{index + 1}</Text>
+          <Text style={styles.indexText}>{index + 1}</Text>
         </View>
-        <Text style={styles.dateText}>{formatDate(Math.floor(item.createdAt / 1000))}</Text>
+        <Text style={styles.dateText}>
+          {formatDate(Math.floor(item.createdAt / 1000))}
+        </Text>
       </View>
 
       <View style={styles.fieldRow}>
-        <Text style={styles.fieldLabel}>Mode</Text>
+        <Text style={styles.fieldLabel}>모드</Text>
         <Text style={styles.fieldValue}>{item.mode.toUpperCase()}</Text>
       </View>
 
       {item.serial ? (
         <View style={styles.fieldRow}>
-          <Text style={styles.fieldLabel}>Serial</Text>
-          <Text style={styles.fieldValue}>{item.serial}</Text>
+          <Text style={styles.fieldLabel}>시리얼</Text>
+          <Text style={styles.fieldValueMono}>{item.serial}</Text>
         </View>
       ) : null}
 
       {item.onchainTimestampMs ? (
         <View style={styles.fieldRow}>
-          <Text style={styles.fieldLabel}>Onchain Timestamp</Text>
+          <Text style={styles.fieldLabel}>온체인 시각</Text>
           <Text style={styles.fieldValue}>
             {new Date(item.onchainTimestampMs).toLocaleString("ko-KR")}
           </Text>
@@ -81,7 +96,7 @@ export default function HistoryScreen({
       {item.mode === "sha256" && item.sha256 ? (
         <View style={styles.fieldRow}>
           <Text style={styles.fieldLabel}>SHA-256</Text>
-          <Text style={styles.fieldValue} numberOfLines={2}>
+          <Text style={styles.fieldValueMono} numberOfLines={2}>
             {item.sha256}
           </Text>
         </View>
@@ -90,45 +105,57 @@ export default function HistoryScreen({
       {item.mode === "phash" && item.phash ? (
         <View style={styles.fieldRow}>
           <Text style={styles.fieldLabel}>pHash</Text>
-          <Text style={styles.fieldValue} numberOfLines={2}>
+          <Text style={styles.fieldValueMono} numberOfLines={2}>
             {item.phash}
           </Text>
         </View>
       ) : null}
 
       <TouchableOpacity
-        style={styles.explorerButton}
+        style={styles.linkRow}
         onPress={() => openLink(item.verificationUrl)}
+        activeOpacity={0.7}
       >
-        <Ionicons name="open-outline" size={14} color="#9945ff" />
-        <Text style={styles.explorerText}>검증 페이지 열기</Text>
+        <Text style={styles.linkText}>검증 페이지</Text>
+        <Ionicons name="open-outline" size={18} color={ui.primary} />
       </TouchableOpacity>
     </View>
   );
 
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={ui.surface} />
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={onBack}>
-          <Ionicons name="arrow-back" size={28} color="#fff" />
+        <TouchableOpacity
+          onPress={onBack}
+          style={styles.iconButton}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <Ionicons name="arrow-back" size={24} color={ui.text} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>등록 히스토리</Text>
-        <TouchableOpacity onPress={onLoadRecords}>
-          <Ionicons name="refresh" size={24} color="#14f195" />
+        <Text style={styles.topBarTitle}>히스토리</Text>
+        <TouchableOpacity
+          onPress={onLoadRecords}
+          style={styles.iconButton}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <Ionicons name="refresh" size={22} color={ui.primary} />
         </TouchableOpacity>
       </View>
 
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#9945ff" />
-          <Text style={styles.loadingText}>온체인 데이터 조회 중...</Text>
+          <ActivityIndicator size="large" color={ui.primary} />
+          <Text style={styles.loadingText}>불러오는 중…</Text>
         </View>
       ) : records.length === 0 ? (
         <View style={styles.centered}>
-          <Ionicons name="images-outline" size={64} color="#333" />
-          <Text style={styles.emptyText}>아직 등록된 사진이 없습니다</Text>
+          <View style={styles.emptyIconWrap}>
+            <Ionicons name="images-outline" size={40} color={ui.textMuted} />
+          </View>
+          <Text style={styles.emptyText}>등록된 기록이 없어요</Text>
           <Text style={styles.emptySubtext}>
-            카메라로 사진을 촬영하고 블록체인에 등록해보세요
+            촬영 후 등록하면 여기에 쌓여요
           </Text>
         </View>
       ) : (
@@ -147,100 +174,131 @@ export default function HistoryScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f23",
+    backgroundColor: ui.canvas,
   },
   topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    backgroundColor: ui.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: ui.borderLight,
+  },
+  iconButton: {
+    width: 44,
+    height: 44,
+    alignItems: "center",
+    justifyContent: "center",
   },
   topBarTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
+    color: ui.text,
+    fontSize: 17,
+    fontWeight: "700",
   },
   centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
+    paddingHorizontal: 32,
   },
   loadingText: {
-    color: "#888",
-    fontSize: 14,
+    color: ui.textSecondary,
+    fontSize: 15,
+    marginTop: 8,
+  },
+  emptyIconWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 28,
+    backgroundColor: ui.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
   },
   emptyText: {
-    color: "#666",
-    fontSize: 16,
-    fontWeight: "600",
+    color: ui.text,
+    fontSize: 18,
+    fontWeight: "700",
   },
   emptySubtext: {
-    color: "#444",
-    fontSize: 13,
+    color: ui.textSecondary,
+    fontSize: 15,
     textAlign: "center",
-    paddingHorizontal: 40,
+    lineHeight: 22,
   },
   list: {
     padding: 20,
-    gap: 16,
+    paddingBottom: 32,
   },
   card: {
-    backgroundColor: "#1a1a2e",
-    borderRadius: 16,
-    padding: 20,
+    backgroundColor: ui.surface,
+    borderRadius: 18,
+    padding: 18,
     borderWidth: 1,
-    borderColor: "#2a2a4a",
-    marginBottom: 16,
+    borderColor: ui.borderLight,
+    marginBottom: 14,
   },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 16,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: ui.borderLight,
   },
   indexBadge: {
-    backgroundColor: "#9945ff",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    backgroundColor: ui.primarySoft,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
   },
   indexText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "700",
+    color: ui.primary,
+    fontSize: 14,
+    fontWeight: "800",
   },
   dateText: {
-    color: "#888",
-    fontSize: 12,
+    color: ui.textSecondary,
+    fontSize: 13,
+    fontWeight: "500",
   },
   fieldRow: {
     marginBottom: 12,
   },
   fieldLabel: {
-    color: "#9945ff",
-    fontSize: 11,
+    color: ui.textSecondary,
+    fontSize: 12,
     fontWeight: "600",
     marginBottom: 4,
-    textTransform: "uppercase",
-    letterSpacing: 1,
   },
   fieldValue: {
-    color: "#14f195",
-    fontSize: 14,
-    fontFamily: "monospace",
+    color: ui.text,
+    fontSize: 15,
+    fontWeight: "500",
+    lineHeight: 22,
   },
-  explorerButton: {
+  fieldValueMono: {
+    color: ui.text,
+    fontSize: 13,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    lineHeight: 20,
+  },
+  linkRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginTop: 4,
-    paddingVertical: 8,
+    justifyContent: "space-between",
+    marginTop: 8,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: ui.borderLight,
   },
-  explorerText: {
-    color: "#9945ff",
-    fontSize: 13,
-    fontWeight: "500",
+  linkText: {
+    color: ui.primary,
+    fontSize: 16,
+    fontWeight: "700",
   },
 });

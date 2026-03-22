@@ -11,6 +11,8 @@ import {
   ScrollView,
   Share,
   Linking,
+  Platform,
+  StatusBar,
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,6 +23,17 @@ import {
 } from "../utils/firstStageFilter";
 import { HashMode } from "../utils/verityApi";
 import { stampMonitorWatermark } from "../utils/monitorWatermark";
+import { ui } from "../theme/tokens";
+
+const barShadow =
+  Platform.OS === "ios"
+    ? {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+      }
+    : { elevation: 1 };
 
 type ShareVariant = "original" | "proved";
 interface CaptureContext {
@@ -87,7 +100,7 @@ export default function CameraScreen({
   if (!permission) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#9945ff" />
+        <ActivityIndicator size="large" color={ui.primary} />
       </View>
     );
   }
@@ -95,16 +108,20 @@ export default function CameraScreen({
   if (!permission.granted) {
     return (
       <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor={ui.canvas} />
         <View style={styles.centered}>
-          <Ionicons name="camera-outline" size={64} color="#555" />
+          <View style={styles.permissionIconWrap}>
+            <Ionicons name="camera-outline" size={40} color={ui.primary} />
+          </View>
           <Text style={styles.permissionText}>
-            카메라 접근 권한이 필요합니다
+            카메라 권한이 필요해요
           </Text>
           <TouchableOpacity
             style={styles.permissionButton}
             onPress={requestPermission}
+            activeOpacity={0.88}
           >
-            <Text style={styles.permissionButtonText}>권한 허용</Text>
+            <Text style={styles.permissionButtonText}>허용하기</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -268,11 +285,12 @@ export default function CameraScreen({
   if (capturedUri) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.topBar}>
+        <StatusBar barStyle="dark-content" backgroundColor={ui.surface} />
+        <View style={[styles.topBar, barShadow]}>
           <TouchableOpacity onPress={onBack} disabled={isProcessing}>
-            <Ionicons name="arrow-back" size={28} color="#fff" />
+            <Ionicons name="arrow-back" size={24} color={ui.text} />
           </TouchableOpacity>
-          <Text style={styles.topBarTitle}>사진 등록</Text>
+          <Text style={styles.topBarTitle}>등록</Text>
           <View style={{ width: 28 }} />
         </View>
 
@@ -330,7 +348,7 @@ export default function CameraScreen({
 
           {isAnalyzing && (
             <View style={styles.filterCard}>
-              <ActivityIndicator size="small" color="#9945ff" />
+              <ActivityIndicator size="small" color={ui.primary} />
               <Text style={styles.filterCardTitle}>1차 필터 검증 중...</Text>
               <Text style={styles.filterCardDesc}>
                 {monitorCaptureMode
@@ -380,7 +398,7 @@ export default function CameraScreen({
               {isProcessing && (
                 <ActivityIndicator
                   size="small"
-                  color="#9945ff"
+                  color={ui.primary}
                   style={{ marginBottom: 8 }}
                 />
               )}
@@ -388,7 +406,7 @@ export default function CameraScreen({
                 <Ionicons
                   name="checkmark-circle"
                   size={32}
-                  color="#14f195"
+                  color={ui.success}
                   style={{ marginBottom: 8 }}
                 />
               )}
@@ -396,7 +414,7 @@ export default function CameraScreen({
                 <Ionicons
                   name="close-circle"
                   size={32}
-                  color="#ff6b6b"
+                  color={ui.danger}
                   style={{ marginBottom: 8 }}
                 />
               )}
@@ -470,7 +488,7 @@ export default function CameraScreen({
                   style={styles.retakeButton}
                   onPress={handleRetake}
                 >
-                  <Ionicons name="refresh" size={20} color="#fff" />
+                  <Ionicons name="refresh" size={20} color={ui.textSecondary} />
                   <Text style={styles.retakeText}>다시 촬영</Text>
                 </TouchableOpacity>
 
@@ -478,15 +496,15 @@ export default function CameraScreen({
                   style={styles.registerButton}
                   onPress={() => handleRegister("sha256")}
                 >
-                  <Ionicons name="shield-checkmark" size={20} color="#0f0f23" />
-                  <Text style={styles.registerText}>SHA-256 + pHash 제출 (1분 배치)</Text>
+                  <Ionicons name="shield-checkmark" size={20} color="#FFFFFF" />
+                  <Text style={styles.registerText}>SHA-256 + pHash 제출</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
                   style={styles.registerButtonSecondary}
                   onPress={() => handleRegister("phash")}
                 >
-                  <Ionicons name="images" size={20} color="#fff" />
+                  <Ionicons name="images" size={20} color={ui.primary} />
                   <Text style={styles.registerTextSecondary}>pHash 루트</Text>
                 </TouchableOpacity>
               </>
@@ -498,7 +516,7 @@ export default function CameraScreen({
                   style={styles.retakeButton}
                   onPress={handleRetake}
                 >
-                  <Ionicons name="camera" size={20} color="#fff" />
+                  <Ionicons name="camera" size={20} color={ui.textSecondary} />
                   <Text style={styles.retakeText}>새 사진 촬영</Text>
                 </TouchableOpacity>
 
@@ -508,8 +526,8 @@ export default function CameraScreen({
 
                 {!!verificationUrl && (
                   <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-                    <Ionicons name="share-social" size={18} color="#fff" />
-                    <Text style={styles.doneText}>
+                    <Ionicons name="share-social" size={18} color={ui.primary} />
+                    <Text style={styles.shareButtonText}>
                       {selectedShareVariant === "proved"
                         ? "PROVED 버전 공유"
                         : "원본 공유"}
@@ -525,7 +543,7 @@ export default function CameraScreen({
                   style={styles.retakeButton}
                   onPress={handleRetake}
                 >
-                  <Ionicons name="refresh" size={20} color="#fff" />
+                  <Ionicons name="refresh" size={20} color={ui.textSecondary} />
                   <Text style={styles.retakeText}>다시 시도</Text>
                 </TouchableOpacity>
               </>
@@ -538,16 +556,21 @@ export default function CameraScreen({
 
   // 카메라 뷰
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={onBack}>
-          <Ionicons name="arrow-back" size={28} color="#fff" />
+    <SafeAreaView style={styles.cameraChrome}>
+      <StatusBar barStyle="dark-content" backgroundColor={ui.surface} />
+      <View style={[styles.topBar, barShadow]}>
+        <TouchableOpacity
+          onPress={onBack}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <Ionicons name="arrow-back" size={24} color={ui.text} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>사진 촬영</Text>
+        <Text style={styles.topBarTitle}>촬영</Text>
         <TouchableOpacity
           onPress={() => setFacing((f) => (f === "back" ? "front" : "back"))}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
-          <Ionicons name="camera-reverse" size={28} color="#fff" />
+          <Ionicons name="camera-reverse" size={24} color={ui.text} />
         </TouchableOpacity>
       </View>
 
@@ -586,46 +609,64 @@ export default function CameraScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f23",
+    backgroundColor: ui.canvas,
+  },
+  cameraChrome: {
+    flex: 1,
+    backgroundColor: ui.surface,
   },
   centered: {
     flex: 1,
-    backgroundColor: "#0f0f23",
+    backgroundColor: ui.canvas,
     justifyContent: "center",
     alignItems: "center",
-    gap: 16,
+    gap: 20,
+    paddingHorizontal: 32,
+  },
+  permissionIconWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 28,
+    backgroundColor: ui.surface,
+    alignItems: "center",
+    justifyContent: "center",
   },
   topBar: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: ui.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: ui.borderLight,
   },
   topBarTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
+    color: ui.text,
+    fontSize: 17,
+    fontWeight: "700",
   },
   permissionText: {
-    color: "#888",
-    fontSize: 16,
+    color: ui.textSecondary,
+    fontSize: 17,
     textAlign: "center",
+    fontWeight: "600",
   },
   permissionButton: {
-    backgroundColor: "#9945ff",
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginTop: 8,
+    backgroundColor: ui.primary,
+    paddingHorizontal: 28,
+    paddingVertical: 15,
+    borderRadius: 14,
+    marginTop: 4,
   },
   permissionButtonText: {
-    color: "#fff",
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   camera: {
     flex: 1,
+    backgroundColor: "#000",
   },
   cameraOverlay: {
     flex: 1,
@@ -641,7 +682,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: 40,
     height: 40,
-    borderColor: "#14f195",
+    borderColor: "#FFFFFF",
   },
   topLeft: {
     top: 0,
@@ -671,8 +712,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingVertical: 28,
-    paddingHorizontal: 40,
+    paddingVertical: 24,
+    paddingHorizontal: 36,
+    backgroundColor: ui.surface,
+    borderTopWidth: 1,
+    borderTopColor: ui.borderLight,
   },
   captureButton: {
     width: 76,
@@ -680,19 +724,21 @@ const styles = StyleSheet.create({
     borderRadius: 38,
     backgroundColor: "transparent",
     borderWidth: 4,
-    borderColor: "#fff",
+    borderColor: ui.text,
     justifyContent: "center",
     alignItems: "center",
   },
   captureButtonInner: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "#fff",
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    backgroundColor: ui.primary,
   },
   previewContainer: {
     padding: 20,
+    paddingBottom: 36,
     alignItems: "center",
+    backgroundColor: ui.canvas,
   },
   previewImage: {
     width: "100%",
@@ -708,14 +754,15 @@ const styles = StyleSheet.create({
   },
   variantCard: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#2d2d4d",
+    backgroundColor: ui.surface,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: ui.borderLight,
     padding: 8,
   },
   variantCardActive: {
-    borderColor: "#14f195",
+    borderColor: ui.primary,
+    backgroundColor: ui.primarySoft,
   },
   variantThumb: {
     width: "100%",
@@ -724,31 +771,32 @@ const styles = StyleSheet.create({
   },
   variantThumbProved: {
     borderWidth: 2,
-    borderColor: "#14f195",
+    borderColor: ui.text,
     borderRadius: 10,
     overflow: "hidden",
   },
   variantLabel: {
-    color: "#fff",
+    color: ui.text,
     fontSize: 12,
     marginTop: 6,
     textAlign: "center",
-    fontWeight: "600",
+    fontWeight: "700",
   },
   provedBadge: {
     position: "absolute",
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "#14f195",
+    backgroundColor: ui.text,
     paddingVertical: 3,
     paddingHorizontal: 4,
   },
   provedBadgeText: {
-    color: "#0f0f23",
+    color: "#FFFFFF",
     fontSize: 9,
     fontWeight: "800",
     textAlign: "center",
+    letterSpacing: 0.3,
   },
   previewProvedContainer: {
     width: "100%",
@@ -760,92 +808,101 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 20,
-    backgroundColor: "#14f195",
+    backgroundColor: ui.text,
     paddingVertical: 8,
   },
   previewFrameText: {
     textAlign: "center",
-    color: "#0f0f23",
+    color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "800",
     letterSpacing: 0.5,
   },
   statusContainer: {
-    backgroundColor: "#1a1a2e",
-    borderRadius: 16,
+    backgroundColor: ui.surface,
+    borderRadius: 18,
     padding: 20,
     width: "100%",
     alignItems: "center",
     marginBottom: 20,
+    borderWidth: 1,
+    borderColor: ui.borderLight,
   },
   filterCard: {
     width: "100%",
-    borderRadius: 14,
-    padding: 14,
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 14,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: ui.surface,
     borderWidth: 1,
-    borderColor: "#2d2d4d",
+    borderColor: ui.borderLight,
   },
   filterPass: {
-    borderColor: "#14f19566",
+    borderColor: ui.success,
+    backgroundColor: ui.successSoft,
   },
   filterWarn: {
-    borderColor: "#f2c94c99",
+    borderColor: ui.warning,
+    backgroundColor: ui.warningSoft,
   },
   filterReject: {
-    borderColor: "#ff6b6b99",
+    borderColor: ui.danger,
+    backgroundColor: ui.dangerSoft,
   },
   filterCardTitle: {
-    color: "#fff",
-    fontSize: 15,
+    color: ui.text,
+    fontSize: 16,
     fontWeight: "700",
     marginTop: 6,
   },
   filterCardDesc: {
-    color: "#b8b8c8",
-    fontSize: 13,
+    color: ui.textSecondary,
+    fontSize: 14,
     marginTop: 6,
-    lineHeight: 18,
+    lineHeight: 20,
   },
   filterReason: {
-    color: "#ddd",
+    color: ui.text,
     fontSize: 13,
     marginTop: 4,
-    lineHeight: 18,
+    lineHeight: 20,
   },
   statusText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+    color: ui.text,
+    fontSize: 17,
+    fontWeight: "700",
   },
   modeMetaText: {
-    color: "#b8b8c8",
-    fontSize: 12,
+    color: ui.textSecondary,
+    fontSize: 13,
     marginTop: 4,
   },
   hashContainer: {
     marginTop: 12,
-    backgroundColor: "#0f0f23",
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: ui.canvas,
+    borderRadius: 12,
+    padding: 14,
     width: "100%",
+    borderWidth: 1,
+    borderColor: ui.borderLight,
   },
   hashLabel: {
-    color: "#9945ff",
+    color: ui.primary,
     fontSize: 12,
-    fontWeight: "600",
-    marginBottom: 4,
+    fontWeight: "700",
+    marginBottom: 6,
   },
   hashValue: {
-    color: "#14f195",
-    fontSize: 14,
-    fontFamily: "monospace",
+    color: ui.text,
+    fontSize: 13,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    lineHeight: 18,
   },
   errorText: {
-    color: "#ff6b6b",
+    color: ui.danger,
     fontSize: 14,
     marginTop: 8,
+    fontWeight: "600",
   },
   previewButtons: {
     width: "100%",
@@ -857,14 +914,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#2a2a4a",
+    backgroundColor: ui.surface,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: ui.border,
   },
   retakeText: {
-    color: "#fff",
+    color: ui.text,
     fontSize: 16,
-    fontWeight: "600",
+    fontWeight: "700",
   },
   registerButton: {
     width: "100%",
@@ -872,12 +931,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#14f195",
+    backgroundColor: ui.primary,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
   },
   registerText: {
-    color: "#0f0f23",
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "700",
   },
@@ -887,14 +946,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#2a2a4a",
+    backgroundColor: ui.surface,
     paddingVertical: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#4b4b71",
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: ui.primarySoft,
   },
   registerTextSecondary: {
-    color: "#fff",
+    color: ui.primary,
     fontSize: 16,
     fontWeight: "700",
   },
@@ -902,12 +961,12 @@ const styles = StyleSheet.create({
     width: "100%",
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#9945ff",
+    backgroundColor: ui.text,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
   },
   doneText: {
-    color: "#fff",
+    color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "700",
   },
@@ -917,21 +976,26 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#2a2a4a",
+    backgroundColor: ui.primarySoft,
     paddingVertical: 16,
-    borderRadius: 12,
+    borderRadius: 14,
+  },
+  shareButtonText: {
+    color: ui.primary,
+    fontSize: 16,
+    fontWeight: "700",
   },
   linkButton: {
-    marginTop: 8,
-    backgroundColor: "#2a2a4a",
-    paddingVertical: 8,
-    borderRadius: 8,
+    marginTop: 10,
+    backgroundColor: ui.primarySoft,
+    paddingVertical: 12,
+    borderRadius: 10,
     alignItems: "center",
   },
   linkButtonText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "600",
+    color: ui.primary,
+    fontSize: 14,
+    fontWeight: "700",
   },
   qrImage: {
     width: 160,
@@ -943,36 +1007,36 @@ const styles = StyleSheet.create({
   },
   monitorModeButton: {
     minWidth: 98,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#4b4b71",
-    backgroundColor: "#2a2a4a",
+    borderColor: ui.border,
+    backgroundColor: ui.canvas,
     alignItems: "center",
   },
   monitorModeButtonActive: {
-    borderColor: "#f2c94c",
-    backgroundColor: "#f2c94c33",
+    borderColor: ui.warning,
+    backgroundColor: ui.warningSoft,
   },
   monitorModeButtonText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "700",
+    color: ui.text,
+    fontSize: 11,
+    fontWeight: "800",
   },
   monitorBadge: {
     width: "100%",
     marginBottom: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#f2c94c77",
-    backgroundColor: "#f2c94c22",
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    borderColor: ui.warning,
+    backgroundColor: ui.warningSoft,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   monitorBadgeText: {
-    color: "#f2c94c",
-    fontSize: 12,
+    color: ui.text,
+    fontSize: 13,
     fontWeight: "700",
   },
 });

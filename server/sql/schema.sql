@@ -104,3 +104,20 @@ ALTER COLUMN captured_timestamp_ms SET NOT NULL;
 
 ALTER TABLE assets
 ALTER COLUMN minute_bucket SET NOT NULL;
+
+-- OpenCellID(또는 동일 스키마) 셀 타워 덤프. import-opencellid 스크립트로 적재.
+CREATE TABLE IF NOT EXISTS opencellid_cells (
+  radio VARCHAR(8) NOT NULL,
+  mcc INTEGER NOT NULL,
+  mnc INTEGER NOT NULL,
+  area INTEGER NOT NULL,
+  cell_id TEXT NOT NULL,
+  lat DOUBLE PRECISION NOT NULL,
+  lon DOUBLE PRECISION NOT NULL,
+  range_m INTEGER,
+  samples INTEGER,
+  PRIMARY KEY (radio, mcc, mnc, area, cell_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_opencellid_cells_mcc_mnc
+  ON opencellid_cells (mcc, mnc, area);

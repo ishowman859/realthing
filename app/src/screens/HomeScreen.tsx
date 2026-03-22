@@ -7,8 +7,10 @@ import {
   SafeAreaView,
   StatusBar,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { ui } from "../theme/tokens";
 
 interface HomeScreenProps {
   connected: boolean;
@@ -21,6 +23,16 @@ interface HomeScreenProps {
   onNavigateHistory: () => void;
 }
 
+const cardShadow =
+  Platform.OS === "ios"
+    ? {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.06,
+        shadowRadius: 12,
+      }
+    : { elevation: 2 };
+
 export default function HomeScreen({
   connected,
   connecting,
@@ -32,46 +44,49 @@ export default function HomeScreen({
   onNavigateHistory,
 }: HomeScreenProps) {
   const shortAddress = address
-    ? `${address.slice(0, 6)}...${address.slice(-4)}`
+    ? `${address.slice(0, 6)}…${address.slice(-4)}`
     : "";
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle="dark-content" backgroundColor={ui.canvas} />
 
       <View style={styles.header}>
         <Text style={styles.logo}>Verity</Text>
-        <Text style={styles.subtitle}>사진 원본 증명 on Solana</Text>
+        <Text style={styles.subtitle}>사진 원본 증명 · Solana</Text>
       </View>
 
       <View style={styles.walletSection}>
         {connected ? (
-          <View style={styles.walletInfo}>
-            <View style={styles.walletBadge}>
-              <Ionicons name="wallet" size={20} color="#14f195" />
+          <View style={[styles.walletCard, cardShadow]}>
+            <View style={styles.walletRow}>
+              <View style={styles.walletIconWrap}>
+                <Ionicons name="wallet" size={22} color={ui.primary} />
+              </View>
               <Text style={styles.walletAddress}>{shortAddress}</Text>
             </View>
-            <Text style={styles.balanceText}>
-              {balance.toFixed(4)} VRT
-            </Text>
+            <Text style={styles.balanceLabel}>잔액</Text>
+            <Text style={styles.balanceValue}>{balance.toFixed(4)} SOL</Text>
             <TouchableOpacity
-              style={styles.disconnectButton}
+              style={styles.textButton}
               onPress={onDisconnect}
+              hitSlop={{ top: 8, bottom: 8, left: 16, right: 16 }}
             >
               <Text style={styles.disconnectText}>연결 해제</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity
-            style={styles.connectButton}
+            style={[styles.connectButton, cardShadow]}
             onPress={onConnect}
             disabled={connecting}
+            activeOpacity={0.88}
           >
             {connecting ? (
-              <ActivityIndicator color="#0f0f23" />
+              <ActivityIndicator color="#FFFFFF" />
             ) : (
               <>
-                <Ionicons name="wallet-outline" size={24} color="#0f0f23" />
+                <Ionicons name="wallet-outline" size={22} color="#FFFFFF" />
                 <Text style={styles.connectText}>지갑 연결</Text>
               </>
             )}
@@ -81,58 +96,82 @@ export default function HomeScreen({
 
       <View style={styles.actions}>
         <TouchableOpacity
-          style={[styles.actionCard, !connected && styles.actionCardDisabled]}
+          style={[
+            styles.actionCard,
+            cardShadow,
+            !connected && styles.actionCardDisabled,
+          ]}
           onPress={onNavigateCamera}
           disabled={!connected}
+          activeOpacity={0.85}
         >
-          <View style={styles.actionIconContainer}>
+          <View style={styles.actionIconCircle}>
             <Ionicons
               name="camera"
-              size={36}
-              color={connected ? "#9945ff" : "#555"}
+              size={26}
+              color={connected ? ui.primary : ui.textMuted}
             />
           </View>
-          <Text
-            style={[
-              styles.actionTitle,
-              !connected && styles.actionTitleDisabled,
-            ]}
-          >
-            사진 촬영 & 등록
-          </Text>
-          <Text style={styles.actionDesc}>
-            온디바이스 AI 1차 필터 → SHA-256 / pHash 선택 등록
-          </Text>
+          <View style={styles.actionTextBlock}>
+            <Text
+              style={[
+                styles.actionTitle,
+                !connected && styles.actionTitleDisabled,
+              ]}
+            >
+              사진 촬영 & 등록
+            </Text>
+            <Text style={styles.actionDesc}>
+              온디바이스 1차 필터 후 SHA-256 · pHash 선택
+            </Text>
+          </View>
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={connected ? ui.textMuted : ui.border}
+          />
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.actionCard, !connected && styles.actionCardDisabled]}
+          style={[
+            styles.actionCard,
+            cardShadow,
+            !connected && styles.actionCardDisabled,
+          ]}
           onPress={onNavigateHistory}
           disabled={!connected}
+          activeOpacity={0.85}
         >
-          <View style={styles.actionIconContainer}>
+          <View style={[styles.actionIconCircle, styles.actionIconCircleAlt]}>
             <Ionicons
-              name="time"
-              size={36}
-              color={connected ? "#14f195" : "#555"}
+              name="time-outline"
+              size={26}
+              color={connected ? ui.success : ui.textMuted}
             />
           </View>
-          <Text
-            style={[
-              styles.actionTitle,
-              !connected && styles.actionTitleDisabled,
-            ]}
-          >
-            등록 히스토리
-          </Text>
-          <Text style={styles.actionDesc}>
-            검증 URL / QR이 포함된 인증 히스토리 조회
-          </Text>
+          <View style={styles.actionTextBlock}>
+            <Text
+              style={[
+                styles.actionTitle,
+                !connected && styles.actionTitleDisabled,
+              ]}
+            >
+              등록 히스토리
+            </Text>
+            <Text style={styles.actionDesc}>
+              검증 URL · QR이 포함된 기록
+            </Text>
+          </View>
+          <Ionicons
+            name="chevron-forward"
+            size={20}
+            color={connected ? ui.textMuted : ui.border}
+          />
         </TouchableOpacity>
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Powered by Verity Chain (SVM)</Text>
+        <Text style={styles.footerText}>Verity · SVM</Text>
       </View>
     </SafeAreaView>
   );
@@ -141,63 +180,79 @@ export default function HomeScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f0f23",
+    backgroundColor: ui.canvas,
   },
   header: {
     alignItems: "center",
-    paddingTop: 48,
-    paddingBottom: 24,
+    paddingTop: 20,
+    paddingBottom: 28,
   },
   logo: {
-    fontSize: 36,
+    fontSize: 34,
     fontWeight: "800",
-    color: "#ffffff",
-    letterSpacing: 1,
+    color: ui.text,
+    letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 14,
-    color: "#888",
+    fontSize: 15,
+    color: ui.textSecondary,
     marginTop: 8,
+    fontWeight: "500",
   },
   walletSection: {
-    paddingHorizontal: 24,
-    marginBottom: 32,
+    paddingHorizontal: 20,
+    marginBottom: 28,
   },
-  walletInfo: {
-    backgroundColor: "#1a1a2e",
-    borderRadius: 16,
-    padding: 20,
-    alignItems: "center",
+  walletCard: {
+    backgroundColor: ui.surface,
+    borderRadius: 20,
+    padding: 22,
     borderWidth: 1,
-    borderColor: "#14f195",
+    borderColor: ui.borderLight,
   },
-  walletBadge: {
+  walletRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 12,
+  },
+  walletIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: ui.primarySoft,
+    alignItems: "center",
+    justifyContent: "center",
   },
   walletAddress: {
+    flex: 1,
     fontSize: 16,
-    color: "#14f195",
-    fontFamily: "monospace",
+    color: ui.text,
+    fontWeight: "600",
   },
-  balanceText: {
+  balanceLabel: {
+    fontSize: 13,
+    color: ui.textSecondary,
+    marginTop: 18,
+    fontWeight: "500",
+  },
+  balanceValue: {
     fontSize: 28,
     fontWeight: "700",
-    color: "#ffffff",
-    marginTop: 12,
+    color: ui.text,
+    marginTop: 4,
+    letterSpacing: -0.5,
   },
-  disconnectButton: {
-    marginTop: 12,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+  textButton: {
+    alignSelf: "flex-start",
+    marginTop: 16,
   },
   disconnectText: {
-    color: "#ff6b6b",
-    fontSize: 13,
+    color: ui.danger,
+    fontSize: 15,
+    fontWeight: "600",
   },
   connectButton: {
-    backgroundColor: "#14f195",
+    backgroundColor: ui.primary,
     borderRadius: 16,
     paddingVertical: 18,
     flexDirection: "row",
@@ -206,49 +261,66 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   connectText: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "700",
-    color: "#0f0f23",
+    color: "#FFFFFF",
   },
   actions: {
-    paddingHorizontal: 24,
-    gap: 16,
+    paddingHorizontal: 20,
+    gap: 12,
   },
   actionCard: {
-    backgroundColor: "#1a1a2e",
-    borderRadius: 16,
-    padding: 24,
+    backgroundColor: ui.surface,
+    borderRadius: 18,
+    paddingVertical: 18,
+    paddingHorizontal: 16,
     borderWidth: 1,
-    borderColor: "#2a2a4a",
+    borderColor: ui.borderLight,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
   },
   actionCardDisabled: {
-    opacity: 0.4,
+    opacity: 0.45,
   },
-  actionIconContainer: {
-    marginBottom: 12,
+  actionIconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: ui.primarySoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionIconCircleAlt: {
+    backgroundColor: ui.successSoft,
+  },
+  actionTextBlock: {
+    flex: 1,
   },
   actionTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "700",
-    color: "#ffffff",
-    marginBottom: 6,
+    color: ui.text,
+    marginBottom: 4,
   },
   actionTitleDisabled: {
-    color: "#555",
+    color: ui.textMuted,
   },
   actionDesc: {
-    fontSize: 13,
-    color: "#888",
-    lineHeight: 18,
+    fontSize: 14,
+    color: ui.textSecondary,
+    lineHeight: 20,
+    fontWeight: "400",
   },
   footer: {
     flex: 1,
     justifyContent: "flex-end",
     alignItems: "center",
-    paddingBottom: 24,
+    paddingBottom: 20,
   },
   footerText: {
-    color: "#444",
+    color: ui.textMuted,
     fontSize: 12,
+    fontWeight: "500",
   },
 });

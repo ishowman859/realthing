@@ -1,0 +1,20 @@
+/** Toss / 월드코인 계열: 밝은 캔버스, 짙은 타이포, 단일 포인트 컬러 */
+export const ui = {
+  canvas: "#F2F4F6",
+  surface: "#FFFFFF",
+  text: "#191F28",
+  textSecondary: "#6B7684",
+  textMuted: "#ADB5BD",
+  border: "#E5E8EB",
+  borderLight: "#F1F3F5",
+  primary: "#3182F6",
+  primarySoft: "#E8F3FF",
+  accent: "#111111",
+  success: "#00B896",
+  successSoft: "#E6FAF5",
+  warning: "#F5A623",
+  warningSoft: "#FFF8EB",
+  danger: "#F04452",
+  dangerSoft: "#FFEBEC",
+  overlay: "rgba(0,0,0,0.45)",
+} as const;
