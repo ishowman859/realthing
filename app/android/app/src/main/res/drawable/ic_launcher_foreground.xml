@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- logo-mark.svg 와 동일 실루엣 (#0f172a), adaptive icon 안전 영역에 맞춤 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M54,20.1 L75.84,34.86 L75.84,44.02 L63.36,51.02 L54,45.66 L44.64,51.02 L32.16,44.02 L32.16,34.86 Z" />
+</vector>

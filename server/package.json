@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "import-opencellid": "node scripts/import-opencellid.mjs"
+    "import-opencellid": "node scripts/import-opencellid.mjs",
+    "generate-app-icons": "node scripts/generate-android-icons.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.848.0",
