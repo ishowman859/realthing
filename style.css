@@ -220,6 +220,41 @@ body {
   color: var(--text-muted);
 }
 
+.search-meta {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+}
+
+.search-meta__hashes {
+  margin-top: 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.search-meta__similar {
+  margin-top: 14px;
+}
+
+.search-meta__list {
+  margin: 8px 0 0;
+  padding-left: 1.1rem;
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+
+.search-meta__list li + li {
+  margin-top: 6px;
+}
+
 .card--actions {
   display: flex;
   flex-wrap: wrap;
@@ -645,6 +680,25 @@ body {
 
 .upload-row--wallet .btn {
   flex: 0 0 auto;
+}
+
+.lookup-divider {
+  margin: 18px 0 12px;
+  text-align: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.lookup-token-label {
+  margin-bottom: 4px;
+}
+
+.lookup-token-help {
+  margin: 0 0 12px;
+  font-size: 0.88rem;
 }
 
 /* Buttons & inputs */

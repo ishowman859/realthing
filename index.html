@@ -12,7 +12,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="style.css?v=5" />
+    <link rel="stylesheet" href="style.css?v=6" />
   </head>
   <body>
     <div class="page-bg" aria-hidden="true"></div>
@@ -40,7 +40,7 @@
         <p class="site-header__eyebrow" id="headerEyebrow">Verification</p>
         <h1 id="titleText" class="site-header__title">Verity 검증 페이지</h1>
         <p id="subText" class="site-header__sub">
-          검증 토큰으로 등록 기록·머클 경로를 조회합니다. 해시 등록·지갑·배치 봉인은 백엔드에서 처리됩니다.
+          사진 파일의 SHA-256을 브라우저에서 계산해 등록 기록을 찾습니다. 토큰·QR 링크 조회도 지원합니다.
         </p>
       </div>
     </header>
@@ -48,27 +48,36 @@
     <main class="wrap">
       <section class="card card--upload" id="lookupCard">
         <div class="card__head">
-          <span class="card__icon" aria-hidden="true">⌕</span>
+          <span class="card__icon" aria-hidden="true">◇</span>
           <div>
-            <div id="labelLookup" class="label">검증 토큰 조회</div>
-            <p id="lookupHelp" class="card__lead">
-              미디어 해시 등록과 머클 배치는 서버·앱 API에서 처리됩니다. 여기서는 공개 토큰으로 기록만 조회합니다.
+            <div id="labelPhotoVerify" class="label">사진으로 검증</div>
+            <p id="photoVerifyHelp" class="card__lead">
+              원본과 동일한 바이트의 사진이면 SHA-256이 일치합니다. 브라우저에서만 해시를 계산한 뒤 서버에 등록 여부를 묻습니다.
             </p>
           </div>
         </div>
         <div class="upload-drop">
-          <div class="upload-row upload-row--actions">
+          <div class="upload-row">
             <input
-              id="tokenInput"
-              type="text"
-              class="text-input mono"
-              placeholder="검증 토큰"
-              autocomplete="off"
-              spellcheck="false"
+              id="verifyPhotoInput"
+              type="file"
+              accept="image/*"
+              class="file-input"
             />
-            <button type="button" id="tokenLookupBtn" class="btn btn-primary">조회</button>
           </div>
-          <p id="tokenLookupStatus" class="upload-status" style="display: none"></p>
+          <div class="upload-row upload-row--actions">
+            <button type="button" id="verifyPhotoBtn" class="btn btn-primary">등록 기록 찾기</button>
+          </div>
+          <p id="verifyPhotoStatus" class="upload-status" style="display: none"></p>
+          <div class="search-meta" id="searchMeta" hidden>
+            <div class="label">백엔드 검색 결과</div>
+            <p id="searchMetaSummary" class="card__lead"></p>
+            <div id="searchMetaHashes" class="search-meta__hashes mono"></div>
+            <div id="similarMatchesWrap" class="search-meta__similar" hidden>
+              <div class="label">유사 후보</div>
+              <ul id="similarMatchesList" class="search-meta__list"></ul>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -190,12 +199,8 @@
         </div>
       </section>
 
-      <section class="card card--glass card--actions">
-        <div id="labelActions" class="label">검증 액션</div>
-        <button id="recheckButton" type="button" class="btn btn-outline">서버 재검증 요청</button>
-      </section>
     </main>
 
-    <script src="script.js?v=9" defer></script>
+    <script src="script.js?v=10" defer></script>
   </body>
 </html>
