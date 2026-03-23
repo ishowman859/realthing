@@ -1,5 +1,7 @@
 # 저장소 루트의 정적 웹(index, admin, css, js)만 GitHub Pages에 배포합니다.
 # Settings → Pages → Source: GitHub Actions
+# 선택: 저장소 Settings → Secrets and variables → Actions → Variables 에서
+# VERITY_PAGES_API = https://백엔드주소 (슬래시 없이, GitHub Pages는 HTTPS이므로 API도 HTTPS 권장)
 name: Deploy static site to Pages
 
 on:
@@ -30,20 +32,52 @@ jobs:
           import re
           from pathlib import Path
           marker = 'name="verity-gh-pages"'
-          repl = '<head>\n    <meta name="verity-gh-pages" content="1" />\n    <meta charset="UTF-8" />'
-          pat = re.compile(
-              r"<head>\s*<meta\s+charset=\"UTF-8\"\s*/>",
-              re.IGNORECASE,
-          )
+          head_pat = re.compile(r"(<head(?:\s[^>]*)?>)", re.IGNORECASE)
+
+          def inject_gh_pages(html: str) -> str:
+              def repl(m):
+                  return m.group(1) + '\n    <meta name="verity-gh-pages" content="1" />'
+
+              out, n = head_pat.subn(repl, html, count=1)
+              if n != 1:
+                  raise SystemExit("Could not find <head> to inject verity-gh-pages")
+              return out
+
           for name in ("index.html", "admin.html"):
               p = Path(name)
               t = p.read_text(encoding="utf-8")
               if marker in t:
                   continue
-              t2, n = pat.subn(repl, t, count=1)
-              if n != 1:
-                  raise SystemExit(f"Head pattern not found in {name}")
-              p.write_text(t2, encoding="utf-8")
+              p.write_text(inject_gh_pages(t), encoding="utf-8")
+          PY
+
+      - name: Inject default API URL into HTML (optional)
+        env:
+          VERITY_PAGES_API: ${{ vars.VERITY_PAGES_API }}
+        run: |
+          python3 << 'PY'
+          import html as html_lib
+          import os
+          import re
+          from pathlib import Path
+
+          api = (os.environ.get("VERITY_PAGES_API") or "").strip()
+          if not api:
+              print("VERITY_PAGES_API not set; leaving meta verity-default-api empty (use ?api= on site).")
+          else:
+              esc = html_lib.escape(api, quote=True)
+              meta_pat = re.compile(
+                  r'(<meta\s+name="verity-default-api"\s+content=")[^"]*(")',
+                  re.IGNORECASE,
+              )
+              for fname in ("index.html", "admin.html"):
+                  p = Path(fname)
+                  t = p.read_text(encoding="utf-8")
+                  t2, n = meta_pat.subn(rf"\1{esc}\2", t, count=1)
+                  if n != 1:
+                      raise SystemExit(f"verity-default-api meta not found in {fname}")
+                  p.write_text(t2, encoding="utf-8")
+              print("Injected VERITY_PAGES_API into", "index.html, admin.html")
           PY
 
       - name: Collect static site for Pages

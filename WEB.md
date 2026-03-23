@@ -7,7 +7,7 @@
 기본 헤더 마크는 투명 배경 **`logo-mark.svg`** 입니다. 공식 실루엣 PNG만 있으면 디자인 툴로 누끼 딴 뒤 SVG/PNG로 바꿔 넣거나, `logo-mark.svg` 경로만 교체하면 됩니다.  
 전체 **`logo.png`** 는 배포에 포함되며, **`?logo=https://...`** 로 다른 이미지를 쓸 수 있습니다 (흰 배경 PNG는 CSS에서 곱하기 블렌드로 배경을 줄입니다).
 
-검증 페이지에서 **사진/동영상 파일을 업로드**하면 `POST /v1/verify/upload`로 등록되고, 서버가 `{ asset, verification }` JSON으로 응답합니다 (로컬은 `npx serve .` + 서버 `npm run dev`, Pages는 `?api=` 필요).
+검증 페이지에서 **사진/동영상 파일을 업로드**하면 `POST /v1/verify/upload`로 등록되고, 서버가 `{ asset, verification }` JSON으로 응답합니다. 로컬은 `npx serve .` + 서버 `npm run dev`면 기본으로 `http://localhost:4000`을 씁니다. GitHub Pages는 **`VERITY_PAGES_API` 변수 주입** 또는 **`?api=`** 로 백엔드를 지정합니다.
 
 ## 로컬 실행
 
@@ -19,11 +19,22 @@ npx serve .
 
 ## API 연결
 
-1. `window.__VERITY_API_BASE__`
-2. URL query: `?api=https://api.example.com`
-3. 로컬(`localhost`)이면 `http://localhost:4000`
-4. 그 외(예: Vercel에서 `/api` 프록시)에는 `/api`
-5. GitHub Pages 배포본(메타 `verity-gh-pages` 주입) 또는 `*.github.io` → 기본 API 없음, **`?api=`** 필요
+우선순위는 다음과 같습니다.
+
+1. `window.__VERITY_API_BASE__` (스크립트보다 먼저 설정한 경우)
+2. URL 쿼리: **`?api=https://백엔드주소`** (빌드에 박힌 값보다 우선)
+3. `<meta name="verity-default-api" content="..." />` — 로컬 `index.html` / `admin.html`에 직접 넣거나, **GitHub Actions 배포 시 주입**
+4. 로컬(`localhost` / `127.0.0.1`)이면 `http://localhost:4000`
+5. 그 외(예: Vercel에서 `/api` 프록시)에는 `/api`
+
+### GitHub Pages + 백엔드
+
+Pages는 **HTTPS**로 열리므로, 브라우저에서 `fetch`할 API도 **`https://...`인 주소**를 쓰는 것이 안전합니다(plain `http://`는 [혼합 콘텐츠](https://developer.mozilla.org/en-US/docs/Web/Security/Mixed_content)로 차단될 수 있음).
+
+1. 저장소 **Settings → Secrets and variables → Actions → Variables** 에서 **`VERITY_PAGES_API`** 추가  
+   예: `https://api.example.com` (끝 슬래시 없이)
+2. `main` 푸시 후 Pages 워크플로가 `index.html` / `admin.html`의 `verity-default-api` 메타에 위 값을 넣습니다.
+3. 변수를 비워 두면 예전처럼 **`?api=https://백엔드주소`** 로만 지정할 수 있습니다.
 
 ## GitHub Pages
 

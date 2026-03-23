@@ -1,18 +1,30 @@
 // Verity 검증 페이지 — API 연동 및 i18n
 const __params = new URLSearchParams(window.location.search);
 const __apiFromQuery = __params.get("api");
+const __apiFromMeta =
+  document
+    .querySelector('meta[name="verity-default-api"]')
+    ?.getAttribute("content")
+    ?.trim() || "";
 const __verityStaticPages =
   /\.github\.io$/i.test(window.location.hostname) ||
   document.querySelector('meta[name="verity-gh-pages"]')?.getAttribute("content") === "1";
 const __host = window.location.hostname;
-const API_BASE =
+
+function __normalizeApiBase(b) {
+  if (!b) return "";
+  return String(b).trim().replace(/\/+$/, "");
+}
+
+const API_BASE = __normalizeApiBase(
   window.__VERITY_API_BASE__ ||
-  __apiFromQuery ||
-  (__host === "localhost" || __host === "127.0.0.1"
-    ? "http://localhost:4000"
-    : __verityStaticPages
-      ? ""
-      : "/api");
+    __apiFromQuery ||
+    (__host === "localhost" || __host === "127.0.0.1"
+      ? "http://localhost:4000"
+      : __verityStaticPages
+        ? __apiFromMeta || ""
+        : "/api")
+);
 
 const I18N = {
   ko: {
@@ -46,7 +58,7 @@ const I18N = {
     recheckError: "재검증 요청 중 오류",
     loadFail: "조회 실패",
     githubPagesNeedApi:
-      "GitHub Pages에서는 API 주소가 필요합니다. URL에 ?api=https://백엔드주소 를 붙이세요.",
+      "API 주소가 없습니다. 저장소 Actions 변수 VERITY_PAGES_API(HTTPS 백엔드)를 설정하거나, URL에 ?api=https://백엔드주소 를 붙이세요.",
     uploadSectionLabel: "미디어 업로드",
     uploadHelp:
       "사진 또는 동영상을 올리면 서버가 해시를 계산하고 등록한 뒤 아래에 검증 결과를 표시합니다.",
@@ -183,7 +195,7 @@ const I18N = {
     recheckError: "再検証リクエスト中にエラー",
     loadFail: "取得失敗",
     githubPagesNeedApi:
-      "GitHub Pages では API の URL が必要です。?api=https://バックエンド を付けてください。",
+      "API の URL がありません。リポジトリの Actions 変数 VERITY_PAGES_API（HTTPS）を設定するか、?api=https://バックエンド を付けてください。",
     uploadSectionLabel: "メディアアップロード",
     uploadHelp: "写真または動画を送ると、サーバーがハッシュを計算して登録し、下に検証結果を表示します。",
     uploadButtonLabel: "アップロードして登録",
@@ -247,7 +259,7 @@ const I18N = {
     recheckError: "请求重新验证时出错",
     loadFail: "加载失败",
     githubPagesNeedApi:
-      "在 GitHub Pages 上需要提供 API 地址：请在 URL 加上 ?api=https://你的后端",
+      "缺少 API 地址：请设置仓库 Actions 变量 VERITY_PAGES_API（HTTPS），或在 URL 加上 ?api=https://你的后端",
     uploadSectionLabel: "上传媒体",
     uploadHelp: "上传照片或视频后，服务器会计算哈希并注册，在下方显示验证结果。",
     uploadButtonLabel: "上传并登记",
