@@ -451,6 +451,18 @@ body {
   font-family: var(--font);
 }
 
+.upload-row--wallet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.upload-row--wallet .btn {
+  flex: 0 0 auto;
+}
+
 /* Buttons & inputs */
 .btn {
   background: #f1f5f9;

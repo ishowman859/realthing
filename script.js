@@ -64,6 +64,12 @@ const I18N = {
       "사진 또는 동영상을 올리면 서버가 해시를 계산하고 등록한 뒤 아래에 검증 결과를 표시합니다.",
     uploadButtonLabel: "업로드 및 등록",
     ownerOptionalPlaceholder: "owner (선택, 비우면 웹 게스트)",
+    backpackConnect: "Backpack 연결",
+    backpackDisconnect: "연결 해제",
+    backpackMissing:
+      "Backpack 브라우저 확장이 필요합니다. https://backpack.app 에서 설치한 뒤 이 페이지를 새로고침하세요.",
+    backpackConnectFail: "Backpack 연결에 실패했습니다",
+    backpackOwnerFilled: "Backpack 주소를 owner 필드에 넣었습니다. 업로드하면 해당 소유자로 등록됩니다.",
     uploadWorking: "업로드 및 서버 처리 중…",
     uploadOk: "등록 완료. 아래 검증 결과를 확인하세요.",
     uploadFail: "업로드 실패",
@@ -133,6 +139,12 @@ const I18N = {
       "Upload a photo or video: the server computes hashes, registers the asset, and shows verification below.",
     uploadButtonLabel: "Upload & register",
     ownerOptionalPlaceholder: "owner (optional)",
+    backpackConnect: "Connect Backpack",
+    backpackDisconnect: "Disconnect",
+    backpackMissing:
+      "Install the Backpack browser extension from https://backpack.app and refresh this page.",
+    backpackConnectFail: "Could not connect to Backpack",
+    backpackOwnerFilled: "Wallet address filled as owner. Uploads will register to this owner.",
     uploadWorking: "Uploading…",
     uploadOk: "Registered. See verification below.",
     uploadFail: "Upload failed",
@@ -200,6 +212,12 @@ const I18N = {
     uploadHelp: "写真または動画を送ると、サーバーがハッシュを計算して登録し、下に検証結果を表示します。",
     uploadButtonLabel: "アップロードして登録",
     ownerOptionalPlaceholder: "owner（任意）",
+    backpackConnect: "Backpack を接続",
+    backpackDisconnect: "切断",
+    backpackMissing:
+      "Backpack ブラウザ拡張が必要です。https://backpack.app からインストールしてページを再読み込みしてください。",
+    backpackConnectFail: "Backpack 接続に失敗しました",
+    backpackOwnerFilled: "ウォレットアドレスを owner に入力しました。アップロードはこの所有者として登録されます。",
     uploadWorking: "アップロード処理中…",
     uploadOk: "登録完了。下の結果を確認してください。",
     uploadFail: "アップロード失敗",
@@ -264,6 +282,11 @@ const I18N = {
     uploadHelp: "上传照片或视频后，服务器会计算哈希并注册，在下方显示验证结果。",
     uploadButtonLabel: "上传并登记",
     ownerOptionalPlaceholder: "owner（可选）",
+    backpackConnect: "连接 Backpack",
+    backpackDisconnect: "断开",
+    backpackMissing: "需要安装 Backpack 浏览器扩展： https://backpack.app 安装后刷新本页。",
+    backpackConnectFail: "Backpack 连接失败",
+    backpackOwnerFilled: "已将钱包地址填入 owner。上传将登记到该所有者。",
     uploadWorking: "正在上传…",
     uploadOk: "已登记。请查看下方验证结果。",
     uploadFail: "上传失败",
@@ -396,6 +419,45 @@ function scheduleReenableButton(button, startedAt) {
   }, wait);
 }
 
+/** Solana pubkey 바이트열 → Base58 (지갑이 Uint8Array만 줄 때 대비) */
+function uint8ToBase58(bytes) {
+  const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+  const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  if (!buf.length) return "";
+  let n = 0n;
+  for (let i = 0; i < buf.length; i++) n = n * 256n + BigInt(buf[i]);
+  const digits = [];
+  while (n > 0n) {
+    digits.push(ALPHABET[Number(n % 58n)]);
+    n = n / 58n;
+  }
+  for (let i = 0; i < buf.length && buf[i] === 0; i++) digits.push(ALPHABET[0]);
+  return digits.length ? digits.reverse().join("") : ALPHABET[0];
+}
+
+function ownerStringFromPublicKey(pk) {
+  if (!pk) return "";
+  if (typeof pk.toBase58 === "function") return pk.toBase58();
+  if (pk instanceof Uint8Array) return uint8ToBase58(pk);
+  if (Array.isArray(pk) && pk.length) return uint8ToBase58(new Uint8Array(pk));
+  if (typeof pk.toString === "function") {
+    const s = pk.toString();
+    if (s && !s.startsWith("[object")) return s;
+  }
+  return "";
+}
+
+/** Backpack이 주입하는 Solana provider (Phantom 등과 구분) */
+function getBackpackSolanaProvider() {
+  const w = window;
+  if (w.backpack && typeof w.backpack.connect === "function") return w.backpack;
+  const sol = w.solana;
+  if (sol && sol.isBackpack === true && typeof sol.connect === "function") return sol;
+  if (w.backpack?.solana && typeof w.backpack.solana.connect === "function")
+    return w.backpack.solana;
+  return null;
+}
+
 const el = {
   titleText: document.getElementById("titleText"),
   subText: document.getElementById("subText"),
@@ -405,6 +467,8 @@ const el = {
   uploadStatus: document.getElementById("uploadStatus"),
   fileInput: document.getElementById("fileInput"),
   ownerInput: document.getElementById("ownerInput"),
+  backpackConnectBtn: document.getElementById("backpackConnectBtn"),
+  backpackDisconnectBtn: document.getElementById("backpackDisconnectBtn"),
   labelSerial: document.getElementById("labelSerial"),
   labelMode: document.getElementById("labelMode"),
   labelCreatedAt: document.getElementById("labelCreatedAt"),
@@ -450,6 +514,60 @@ const el = {
   labelMerklePathLen: document.getElementById("labelMerklePathLen"),
   labelMerkleLocal: document.getElementById("labelMerkleLocal"),
 };
+
+let backpackProviderRef = null;
+
+function updateBackpackUi(connected) {
+  if (el.backpackConnectBtn) el.backpackConnectBtn.hidden = !!connected;
+  if (el.backpackDisconnectBtn) el.backpackDisconnectBtn.hidden = !connected;
+}
+
+function bindBackpackWallet() {
+  const connectBtn = el.backpackConnectBtn;
+  const disconnectBtn = el.backpackDisconnectBtn;
+  if (!connectBtn || !disconnectBtn) return;
+
+  updateBackpackUi(false);
+
+  connectBtn.addEventListener("click", async () => {
+    if (connectBtn.disabled) return;
+    const provider = getBackpackSolanaProvider();
+    if (!provider) {
+      alert(t("backpackMissing"));
+      return;
+    }
+    try {
+      const result = await provider.connect();
+      const pk = result?.publicKey ?? provider.publicKey;
+      const owner = ownerStringFromPublicKey(pk);
+      if (!owner) throw new Error("empty pubkey");
+      if (el.ownerInput) el.ownerInput.value = owner;
+      backpackProviderRef = provider;
+      updateBackpackUi(true);
+      if (el.uploadStatus) {
+        el.uploadStatus.style.display = "block";
+        el.uploadStatus.textContent = t("backpackOwnerFilled");
+      }
+    } catch (err) {
+      alert(`${t("backpackConnectFail")}: ${err?.message || err}`);
+    }
+  });
+
+  disconnectBtn.addEventListener("click", async () => {
+    if (disconnectBtn.disabled) return;
+    const provider = backpackProviderRef || getBackpackSolanaProvider();
+    try {
+      if (provider && typeof provider.disconnect === "function") {
+        await provider.disconnect();
+      }
+    } catch (_) {
+      /* ignore */
+    }
+    backpackProviderRef = null;
+    if (el.ownerInput) el.ownerInput.value = "";
+    updateBackpackUi(false);
+  });
+}
 
 let lastVerificationPayload = null;
 
@@ -497,6 +615,8 @@ function applyStaticI18n() {
   if (el.uploadHelp) el.uploadHelp.textContent = t("uploadHelp");
   if (el.uploadButton) setText(el.uploadButton, t("uploadButtonLabel"));
   if (el.ownerInput) el.ownerInput.placeholder = t("ownerOptionalPlaceholder");
+  if (el.backpackConnectBtn) setText(el.backpackConnectBtn, t("backpackConnect"));
+  if (el.backpackDisconnectBtn) setText(el.backpackDisconnectBtn, t("backpackDisconnect"));
   setStatus("warn", t("loading"));
   if (el.labelMerkleSection) setText(el.labelMerkleSection, t("merkleSectionLabel"));
   if (el.labelMerkleRoot) setText(el.labelMerkleRoot, t("labelMerkleRootPub"));
@@ -794,6 +914,8 @@ function bindUpload() {
     el.uploadButton.disabled = locked;
     el.fileInput.disabled = locked;
     if (el.ownerInput) el.ownerInput.disabled = locked;
+    if (el.backpackConnectBtn) el.backpackConnectBtn.disabled = locked;
+    if (el.backpackDisconnectBtn) el.backpackDisconnectBtn.disabled = locked;
   };
 
   el.uploadButton.addEventListener("click", async () => {
@@ -853,6 +975,7 @@ async function main() {
   applyStaticI18n();
   sessionToken = getTokenFromUrl();
   bindUpload();
+  bindBackpackWallet();
 
   if (!API_BASE) {
     setStatus("bad", __verityStaticPages ? t("githubPagesNeedApi") : t("loadFail"));
