@@ -77,11 +77,11 @@ export function useVerityHash(ownerAddress: string) {
         const serial = createSerial(mode);
         let phash: string | null = null;
         let sha256: string;
+        const mediaType = opts?.mediaType ?? "photo";
 
         if (mode === "sha256") {
           // [각주1] SHA-256 + pHash(선택). 사진은 동시 계산, 동영상은 구간 썸네일+장면전환 키프레임.
           // 서버는 수신 시각 기준 10초 버킷으로 묶어 SHA-256/pHash 머클 배치를 생성합니다.
-          const mediaType = opts?.mediaType ?? "photo";
           let phashVal: string | null = null;
           let mergedMeta: Record<string, unknown> = { ...(metadata ?? {}) };
 
@@ -162,7 +162,7 @@ export function useVerityHash(ownerAddress: string) {
         const record = await registerAsset({
           owner,
           mode,
-          mediaType: "photo",
+          mediaType,
           sourceUri: undefined,
           serial,
           sha256,

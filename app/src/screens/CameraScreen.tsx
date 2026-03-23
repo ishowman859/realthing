@@ -14,7 +14,7 @@ import {
   Platform,
   StatusBar,
 } from "react-native";
-import { CameraView, useCameraPermissions } from "expo-camera";
+import { CameraView, CameraMode, useCameraPermissions } from "expo-camera";
 import * as MediaLibrary from "expo-media-library";
 import { Ionicons } from "@expo/vector-icons";
 import { RegistrationStatus } from "../hooks/useVerityHash";
@@ -38,6 +38,7 @@ const barShadow =
     : { elevation: 1 };
 
 type ShareVariant = "original" | "proved";
+type CaptureMediaType = "photo" | "video";
 interface CaptureContext {
   captureTimestamp: number;
   gps: { lat: number; lng: number } | null;
@@ -56,7 +57,8 @@ interface CameraScreenProps {
     uri: string,
     mode: HashMode,
     aiRiskScore?: number,
-    metadata?: Record<string, unknown>
+    metadata?: Record<string, unknown>,
+    opts?: { mediaType?: CaptureMediaType }
   ) => Promise<any>;
   onReset: () => void;
   onBack: () => void;
@@ -91,12 +93,16 @@ export default function CameraScreen({
   const lastLibrarySaveKeyRef = useRef<string | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
+  const [capturedMediaType, setCapturedMediaType] =
+    useState<CaptureMediaType>("photo");
   const [captureContext, setCaptureContext] = useState<CaptureContext | null>(null);
   const [facing, setFacing] = useState<"front" | "back">("back");
+  const [cameraMode, setCameraMode] = useState<CameraMode>("picture");
   const [filterResult, setFilterResult] = useState<FirstStageFilterResult | null>(
     null
   );
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [selectedShareVariant, setSelectedShareVariant] =
     useState<ShareVariant>("proved");
   const [monitorCaptureMode, setMonitorCaptureMode] = useState(false);
@@ -115,20 +121,24 @@ export default function CameraScreen({
     (async () => {
       try {
         let outUri = capturedUri;
-        try {
-          outUri = await stampHashProofWatermark(capturedUri, {
-            sha256: sha || null,
-            phash: ph || null,
-          });
-        } catch {
-          /* 해시 오버레이 실패 시 원본 저장 */
+        if (capturedMediaType === "photo") {
+          try {
+            outUri = await stampHashProofWatermark(capturedUri, {
+              sha256: sha || null,
+              phash: ph || null,
+            });
+          } catch {
+            /* 해시 오버레이 실패 시 원본 저장 */
+          }
         }
         const perm = await MediaLibrary.requestPermissionsAsync();
         if (cancelled) return;
         if (perm.status !== "granted") {
           Alert.alert(
-            "사진 보관함",
-            "검증 해시가 박힌 촬영본을 저장하려면 사진 라이브러리 접근을 허용해 주세요."
+            "미디어 보관함",
+            capturedMediaType === "video"
+              ? "해시 등록이 끝난 영상을 저장하려면 미디어 라이브러리 접근을 허용해 주세요."
+              : "검증 해시가 박힌 촬영본을 저장하려면 사진 라이브러리 접근을 허용해 주세요."
           );
           return;
         }
@@ -137,7 +147,12 @@ export default function CameraScreen({
       } catch (e) {
         if (!cancelled) {
           console.warn("saveToLibraryAsync", e);
-          Alert.alert("저장 실패", "사진 보관함에 저장하지 못했습니다.");
+          Alert.alert(
+            "저장 실패",
+            capturedMediaType === "video"
+              ? "영상 보관함에 저장하지 못했습니다."
+              : "사진 보관함에 저장하지 못했습니다."
+          );
         }
       }
     })();
@@ -145,7 +160,7 @@ export default function CameraScreen({
     return () => {
       cancelled = true;
     };
-  }, [status, capturedUri, currentSha256, currentPhash]);
+  }, [status, capturedUri, currentSha256, currentPhash, capturedMediaType]);
 
   if (!permission) {
     return (
@@ -227,18 +242,68 @@ export default function CameraScreen({
     }
   };
 
+  const toggleCaptureMediaType = (nextType: CaptureMediaType) => {
+    if (isRecording) return;
+    setCameraMode(nextType === "video" ? "video" : "picture");
+    setCapturedMediaType(nextType);
+    setFilterResult(null);
+    setIsAnalyzing(false);
+    if (nextType === "video") {
+      setSelectedShareVariant("original");
+      setMonitorCaptureMode(false);
+    }
+  };
+
+  const startVideoRecording = async () => {
+    if (!cameraRef.current || isRecording) return;
+    try {
+      setIsRecording(true);
+      setFilterResult(null);
+      setIsAnalyzing(false);
+      const recorded = await cameraRef.current.recordAsync({
+        maxDuration: 120,
+      });
+      if (recorded?.uri) {
+        setCapturedUri(recorded.uri);
+        setCapturedMediaType("video");
+        setCaptureContext({
+          captureTimestamp: Date.now(),
+          gps: null,
+        });
+      }
+    } catch (err) {
+      Alert.alert("오류", "영상 촬영에 실패했습니다");
+    } finally {
+      setIsRecording(false);
+    }
+  };
+
+  const stopVideoRecording = async () => {
+    if (!cameraRef.current || !isRecording) return;
+    try {
+      cameraRef.current.stopRecording();
+    } catch (err) {
+      Alert.alert("오류", "영상 촬영을 종료하지 못했습니다");
+      setIsRecording(false);
+    }
+  };
+
   const handleRegister = async (mode: HashMode) => {
     if (!capturedUri) return;
+    if (capturedMediaType === "video" && mode === "phash") {
+      Alert.alert("안내", "영상은 SHA-256 + pHash 키프레임 경로로 등록됩니다.");
+      return;
+    }
 
     const now = Date.now();
     const elapsedMs = now - lastRegisterAtRef.current;
     if (elapsedMs < 1000) {
-      Alert.alert("잠시만요", "사진 등록은 1초에 1회만 가능합니다.");
+      Alert.alert("잠시만요", "미디어 등록은 1초에 1회만 가능합니다.");
       return;
     }
 
     if (isAnalyzing) {
-      Alert.alert("검증 중", "사진 검증이 끝난 뒤 등록할 수 있습니다.");
+      Alert.alert("검증 중", "미디어 검증이 끝난 뒤 등록할 수 있습니다.");
       return;
     }
 
@@ -274,9 +339,11 @@ export default function CameraScreen({
                 antiSpoofModel: filterResult?.metrics.antiSpoofModel ?? null,
                 monitorCaptureMode,
                 monitorWatermarkApplied: monitorCaptureMode,
+                captureMediaType: capturedMediaType,
                 captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
                 gps: captureContext?.gps ?? null,
-              }
+              },
+              { mediaType: capturedMediaType }
             );
           },
         },
@@ -293,9 +360,10 @@ export default function CameraScreen({
       antiSpoofModel: filterResult?.metrics.antiSpoofModel ?? null,
       monitorCaptureMode,
       monitorWatermarkApplied: monitorCaptureMode,
+      captureMediaType: capturedMediaType,
       captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
       gps: captureContext?.gps ?? null,
-    });
+    }, { mediaType: capturedMediaType });
   };
 
   const handleRetake = () => {
@@ -306,6 +374,7 @@ export default function CameraScreen({
     setCaptureContext(null);
     setSelectedShareVariant("proved");
     setMonitorCaptureMode(false);
+    setCapturedMediaType(cameraMode === "video" ? "video" : "photo");
     onReset();
   };
 
@@ -332,6 +401,8 @@ export default function CameraScreen({
     });
   };
 
+  const isPhotoCapture = capturedMediaType === "photo";
+
   // 촬영 완료 후 결과/등록 화면
   if (capturedUri) {
     return (
@@ -349,47 +420,65 @@ export default function CameraScreen({
           contentContainerStyle={styles.previewContainer}
           bounces={false}
         >
-          <View style={styles.variantSelector}>
-            <TouchableOpacity
-              style={[
-                styles.variantCard,
-                selectedShareVariant === "original" && styles.variantCardActive,
-              ]}
-              onPress={() => setSelectedShareVariant("original")}
-            >
-              <Image source={{ uri: capturedUri }} style={styles.variantThumb} />
-              <Text style={styles.variantLabel}>원본</Text>
-            </TouchableOpacity>
+          {isPhotoCapture ? (
+            <>
+              <View style={styles.variantSelector}>
+                <TouchableOpacity
+                  style={[
+                    styles.variantCard,
+                    selectedShareVariant === "original" && styles.variantCardActive,
+                  ]}
+                  onPress={() => setSelectedShareVariant("original")}
+                >
+                  <Image source={{ uri: capturedUri }} style={styles.variantThumb} />
+                  <Text style={styles.variantLabel}>원본</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[
-                styles.variantCard,
-                selectedShareVariant === "proved" && styles.variantCardActive,
-              ]}
-              onPress={() => setSelectedShareVariant("proved")}
-            >
-              <View style={styles.variantThumbProved}>
-                <Image source={{ uri: capturedUri }} style={styles.variantThumb} />
-                <View style={styles.provedBadge}>
-                  <Text style={styles.provedBadgeText}>PROVED BY VERITY</Text>
-                </View>
+                <TouchableOpacity
+                  style={[
+                    styles.variantCard,
+                    selectedShareVariant === "proved" && styles.variantCardActive,
+                  ]}
+                  onPress={() => setSelectedShareVariant("proved")}
+                >
+                  <View style={styles.variantThumbProved}>
+                    <Image source={{ uri: capturedUri }} style={styles.variantThumb} />
+                    <View style={styles.provedBadge}>
+                      <Text style={styles.provedBadgeText}>PROVED BY VERITY</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.variantLabel}>PROVED 테두리</Text>
+                </TouchableOpacity>
               </View>
-              <Text style={styles.variantLabel}>PROVED 테두리</Text>
-            </TouchableOpacity>
-          </View>
 
-          {selectedShareVariant === "original" ? (
-            <Image source={{ uri: capturedUri }} style={styles.previewImage} />
+              {selectedShareVariant === "original" ? (
+                <Image source={{ uri: capturedUri }} style={styles.previewImage} />
+              ) : (
+                <View style={styles.previewProvedContainer}>
+                  <Image source={{ uri: capturedUri }} style={styles.previewImage} />
+                  <View style={styles.previewFrame}>
+                    <Text style={styles.previewFrameText}>PROVED BY VERITY</Text>
+                  </View>
+                </View>
+              )}
+            </>
           ) : (
-            <View style={styles.previewProvedContainer}>
-              <Image source={{ uri: capturedUri }} style={styles.previewImage} />
-              <View style={styles.previewFrame}>
-                <Text style={styles.previewFrameText}>PROVED BY VERITY</Text>
+            <View style={styles.videoPreviewCard}>
+              <Ionicons name="videocam" size={36} color={ui.primary} />
+              <Text style={styles.videoPreviewTitle}>영상 촬영 완료</Text>
+              <Text style={styles.videoPreviewDesc}>
+                이 영상으로 SHA-256과 대표 pHash 키프레임을 계산해 등록합니다.
+              </Text>
+              <Text style={styles.videoPreviewUri} numberOfLines={2}>
+                {capturedUri}
+              </Text>
+              <View style={styles.videoPill}>
+                <Text style={styles.videoPillText}>VIDEO</Text>
               </View>
             </View>
           )}
 
-          {monitorCaptureMode && (
+          {monitorCaptureMode && isPhotoCapture && (
             <View style={styles.monitorBadge}>
               <Text style={styles.monitorBadgeText}>
                 MONITOR 워터마크 적용됨 (해시 생성에 포함)
@@ -478,8 +567,9 @@ export default function CameraScreen({
               )}
               {status === "success" && (currentSha256 || currentPhash) ? (
                 <Text style={styles.saveHintText}>
-                  하단에 SHA-256·pHash를 박은 촬영본을 사진 보관함에 자동 저장합니다.
-                  (접근 권한을 허용해 주세요.)
+                  {capturedMediaType === "video"
+                    ? "등록이 끝난 영상을 미디어 보관함에 자동 저장합니다. (접근 권한 필요)"
+                    : "하단에 SHA-256·pHash를 박은 촬영본을 사진 보관함에 자동 저장합니다. (접근 권한 필요)"}
                 </Text>
               ) : null}
 
@@ -577,8 +667,14 @@ export default function CameraScreen({
                   style={styles.retakeButton}
                   onPress={handleRetake}
                 >
-                  <Ionicons name="camera" size={20} color={ui.textSecondary} />
-                  <Text style={styles.retakeText}>새 사진 촬영</Text>
+                  <Ionicons
+                    name={capturedMediaType === "video" ? "videocam" : "camera"}
+                    size={20}
+                    color={ui.textSecondary}
+                  />
+                  <Text style={styles.retakeText}>
+                    {capturedMediaType === "video" ? "새 영상 촬영" : "새 사진 촬영"}
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.doneButton} onPress={onBack}>
@@ -635,7 +731,49 @@ export default function CameraScreen({
         </TouchableOpacity>
       </View>
 
-      <CameraView ref={cameraRef} style={styles.camera} facing={facing}>
+      <View style={styles.captureTypeBar}>
+        <TouchableOpacity
+          style={[
+            styles.captureTypeChip,
+            cameraMode === "picture" && styles.captureTypeChipActive,
+          ]}
+          onPress={() => toggleCaptureMediaType("photo")}
+        >
+          <Text
+            style={[
+              styles.captureTypeChipText,
+              cameraMode === "picture" && styles.captureTypeChipTextActive,
+            ]}
+          >
+            사진
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.captureTypeChip,
+            cameraMode === "video" && styles.captureTypeChipActive,
+          ]}
+          onPress={() => toggleCaptureMediaType("video")}
+        >
+          <Text
+            style={[
+              styles.captureTypeChipText,
+              cameraMode === "video" && styles.captureTypeChipTextActive,
+            ]}
+          >
+            영상
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      <CameraView
+        ref={cameraRef}
+        style={styles.camera}
+        facing={facing}
+        mode={cameraMode}
+        mute
+        videoQuality="720p"
+      >
         <View style={styles.cameraOverlay}>
           <View style={styles.crosshair}>
             <View style={[styles.crosshairCorner, styles.topLeft]} />
@@ -651,17 +789,52 @@ export default function CameraScreen({
           style={[
             styles.monitorModeButton,
             monitorCaptureMode && styles.monitorModeButtonActive,
+            cameraMode === "video" && styles.monitorModeButtonDisabled,
           ]}
-          onPress={() => setMonitorCaptureMode((prev) => !prev)}
+          onPress={() => {
+            if (cameraMode === "video") return;
+            setMonitorCaptureMode((prev) => !prev);
+          }}
         >
           <Text style={styles.monitorModeButtonText}>
-            {monitorCaptureMode ? "MONITOR ON" : "MONITOR OFF"}
+            {cameraMode === "video"
+              ? "MONITOR N/A"
+              : monitorCaptureMode
+                ? "MONITOR ON"
+                : "MONITOR OFF"}
           </Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.captureButton} onPress={takePicture}>
-          <View style={styles.captureButtonInner} />
+        <TouchableOpacity
+          style={[
+            styles.captureButton,
+            cameraMode === "video" && styles.captureButtonVideo,
+            isRecording && styles.captureButtonRecording,
+          ]}
+          onPress={
+            cameraMode === "video"
+              ? isRecording
+                ? stopVideoRecording
+                : startVideoRecording
+              : takePicture
+          }
+        >
+          <View
+            style={[
+              styles.captureButtonInner,
+              cameraMode === "video" && styles.captureButtonInnerVideo,
+              isRecording && styles.captureButtonInnerRecording,
+            ]}
+          />
         </TouchableOpacity>
-        <View style={{ width: 48 }} />
+        <View style={styles.captureModeLabelWrap}>
+          <Text style={styles.captureModeLabel}>
+            {cameraMode === "video"
+              ? isRecording
+                ? "녹화 중"
+                : "영상"
+              : "사진"}
+          </Text>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -729,6 +902,34 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#000",
   },
+  captureTypeBar: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 10,
+    paddingTop: 12,
+    paddingBottom: 8,
+    backgroundColor: ui.surface,
+  },
+  captureTypeChip: {
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: ui.canvas,
+    borderWidth: 1,
+    borderColor: ui.border,
+  },
+  captureTypeChipActive: {
+    backgroundColor: ui.primarySoft,
+    borderColor: ui.primary,
+  },
+  captureTypeChipText: {
+    color: ui.textSecondary,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  captureTypeChipTextActive: {
+    color: ui.primary,
+  },
   cameraOverlay: {
     flex: 1,
     justifyContent: "center",
@@ -789,11 +990,36 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  captureButtonVideo: {
+    borderColor: ui.danger,
+  },
+  captureButtonRecording: {
+    borderColor: ui.danger,
+    transform: [{ scale: 1.03 }],
+  },
   captureButtonInner: {
     width: 58,
     height: 58,
     borderRadius: 29,
     backgroundColor: ui.primary,
+  },
+  captureButtonInnerVideo: {
+    backgroundColor: ui.danger,
+  },
+  captureButtonInnerRecording: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: ui.danger,
+  },
+  captureModeLabelWrap: {
+    width: 48,
+    alignItems: "center",
+  },
+  captureModeLabel: {
+    color: ui.textSecondary,
+    fontSize: 11,
+    fontWeight: "800",
   },
   previewContainer: {
     padding: 20,
@@ -1094,6 +1320,9 @@ const styles = StyleSheet.create({
     borderColor: ui.warning,
     backgroundColor: ui.warningSoft,
   },
+  monitorModeButtonDisabled: {
+    opacity: 0.55,
+  },
   monitorModeButtonText: {
     color: ui.text,
     fontSize: 11,
@@ -1113,6 +1342,49 @@ const styles = StyleSheet.create({
     color: ui.text,
     fontSize: 13,
     fontWeight: "700",
+  },
+  videoPreviewCard: {
+    width: "100%",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: ui.borderLight,
+    backgroundColor: ui.surface,
+    padding: 22,
+    alignItems: "center",
+    marginBottom: 18,
+  },
+  videoPreviewTitle: {
+    color: ui.text,
+    fontSize: 18,
+    fontWeight: "800",
+    marginTop: 12,
+  },
+  videoPreviewDesc: {
+    color: ui.textSecondary,
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: "center",
+    marginTop: 8,
+  },
+  videoPreviewUri: {
+    color: ui.textMuted,
+    fontSize: 11,
+    lineHeight: 16,
+    textAlign: "center",
+    marginTop: 12,
+  },
+  videoPill: {
+    marginTop: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: ui.primarySoft,
+  },
+  videoPillText: {
+    color: ui.primary,
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.4,
   },
 });
 

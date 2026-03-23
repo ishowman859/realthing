@@ -134,6 +134,18 @@
         <div id="labelMerkleSection" class="label label--section">머클 경로 검증</div>
         <div id="merkleChainPanel" class="merkle-chain-panel" hidden>
           <div id="merkleChainTitle" class="merkle-chain-title"></div>
+          <div class="merkle-tree-grid" id="merkleTreeGrid">
+            <div class="merkle-tree-card">
+              <div class="label">SHA-256 트리</div>
+              <div id="sha256TreeRootVal" class="value mono value--hash">-</div>
+              <div id="sha256TreeMeta" class="merkle-tree-meta">-</div>
+            </div>
+            <div class="merkle-tree-card">
+              <div class="label">pHash 트리</div>
+              <div id="phashTreeRootVal" class="value mono value--hash">-</div>
+              <div id="phashTreeMeta" class="merkle-tree-meta">-</div>
+            </div>
+          </div>
           <div class="grid merkle-grid">
             <div class="field">
               <div id="labelIndexedBlock" class="label"></div>
@@ -151,6 +163,13 @@
               <div id="labelChainTx" class="label"></div>
               <div id="chainTxVal" class="value mono value--hash">-</div>
             </div>
+          </div>
+          <div class="merkle-anchor-card">
+            <div class="label">앵커 저장 위치</div>
+            <div id="anchorSourceVal" class="value">-</div>
+            <div class="label" style="margin-top: 12px">앵커 payload</div>
+            <pre id="anchorPayloadVal" class="merkle-anchor-payload mono">-</pre>
+            <a id="anchorExplorerLink" class="btn btn-outline merkle-anchor-link" href="#" target="_blank" rel="noreferrer" hidden>Solana Explorer 열기</a>
           </div>
           <p id="merkleChainNote" class="merkle-chain-note"></p>
         </div>

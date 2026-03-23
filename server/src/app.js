@@ -44,6 +44,7 @@ import { enrichMetadataWithOpenCellid } from "./cellGpsAnalysis.js";
 import { countOpenCellidRows } from "./opencellid.js";
 import {
   getSolanaMerkleAnchorOptions,
+  solanaExplorerTxUrl,
   submitMerkleRootMemo,
 } from "./solanaMerkleAnchor.js";
 
@@ -978,6 +979,13 @@ function toVerificationView(row, merkleCheck = null) {
   const merkleTrees = merkleCheck?.trees || buildEmptyMerkleTrees();
   const preferredTreeType = merkleCheck?.preferredTreeType || pickPreferredTreeType(row);
   const preferredTree = merkleTrees[preferredTreeType] || merkleTrees.sha256;
+  const batch = merkleCheck?.batch || null;
+  const anchorPayload = batch?.merkle_anchor_payload_json || null;
+  const solanaOptions = getSolanaMerkleAnchorOptions();
+  const explorerUrl =
+    batch?.tx_hash && solanaOptions
+      ? solanaExplorerTxUrl(solanaOptions.cluster, batch.tx_hash)
+      : null;
   return {
     token: row.token,
     /** 머클 리프 직렬화(createAssetLeafHash)에 필요 — 브라우저가 서버 없이 리프 재계산 시 사용 */
@@ -1000,6 +1008,25 @@ function toVerificationView(row, merkleCheck = null) {
     computedMerkleRoot:
       preferredTree?.computedRoot ?? merkleCheck?.computedRoot ?? null,
     merkleTrees,
+    batchMerkleRoots: batch
+      ? {
+          primary: batch.merkle_root ?? null,
+          sha256: batch.sha256_merkle_root ?? null,
+          phash: batch.phash_merkle_root ?? null,
+        }
+      : null,
+    batchAnchor: batch
+      ? {
+          txHash: batch.tx_hash ?? null,
+          blockNumber: batch.block_number ?? null,
+          payload: anchorPayload,
+          explorerUrl,
+          source:
+            String(batch.tx_hash || "").startsWith("vrt_batch_") || !batch.tx_hash
+              ? "db"
+              : "solana",
+        }
+      : null,
     gps: {
       lat: row.gps_lat,
       lng: row.gps_lng,
@@ -1250,6 +1277,7 @@ async function verifyAssetAgainstIndexedBlock(row) {
       blockNumber: row?.indexed_block_number ?? null,
       storedRoot: null,
       computedRoot: null,
+      batch: null,
       trees,
       preferredTreeType,
       reason: "batch_missing",
@@ -1266,6 +1294,7 @@ async function verifyAssetAgainstIndexedBlock(row) {
       blockNumber: row?.indexed_block_number ?? null,
       storedRoot: batch?.merkle_root ?? null,
       computedRoot: null,
+      batch,
       trees,
       preferredTreeType,
       reason: "batch_not_finalized",
@@ -1279,6 +1308,7 @@ async function verifyAssetAgainstIndexedBlock(row) {
       blockNumber: batch.block_number,
       storedRoot: batch.merkle_root,
       computedRoot: null,
+      batch,
       trees,
       preferredTreeType,
       reason: "batch_empty",
@@ -1314,6 +1344,7 @@ async function verifyAssetAgainstIndexedBlock(row) {
     blockNumber: batch.block_number,
     storedRoot: preferredTree.storedRoot,
     computedRoot: preferredTree.computedRoot,
+    batch,
     trees,
     preferredTreeType,
     reason:

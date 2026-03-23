@@ -761,6 +761,13 @@ const el = {
   computedRootVal: document.getElementById("computedRootVal"),
   labelChainTx: document.getElementById("labelChainTx"),
   chainTxVal: document.getElementById("chainTxVal"),
+  sha256TreeRootVal: document.getElementById("sha256TreeRootVal"),
+  sha256TreeMeta: document.getElementById("sha256TreeMeta"),
+  phashTreeRootVal: document.getElementById("phashTreeRootVal"),
+  phashTreeMeta: document.getElementById("phashTreeMeta"),
+  anchorSourceVal: document.getElementById("anchorSourceVal"),
+  anchorPayloadVal: document.getElementById("anchorPayloadVal"),
+  anchorExplorerLink: document.getElementById("anchorExplorerLink"),
   merkleChainNote: document.getElementById("merkleChainNote"),
   merkleTreeViz: document.getElementById("merkleTreeViz"),
 };
@@ -871,7 +878,53 @@ function renderMerkleChain(data) {
   setText(el.computedRootVal, data.computedMerkleRoot || "-");
   const tx = data.chainTxSignature;
   setText(el.chainTxVal, tx && String(tx).trim() ? String(tx) : "-");
+  renderMerkleTreeCards(data);
+  renderAnchorCard(data);
   if (el.merkleChainNote) el.merkleChainNote.textContent = t("merkleChainNote");
+}
+
+function renderMerkleTreeCards(data) {
+  const shaTree = data?.merkleTrees?.sha256 || null;
+  const phTree = data?.merkleTrees?.phash || null;
+  setText(el.sha256TreeRootVal, data?.batchMerkleRoots?.sha256 || shaTree?.storedRoot || "-");
+  setText(el.phashTreeRootVal, data?.batchMerkleRoots?.phash || phTree?.storedRoot || "-");
+  if (el.sha256TreeMeta) {
+    el.sha256TreeMeta.textContent = [
+      `leaf: ${shaTree?.leafHash || "-"}`,
+      `proof: ${Array.isArray(shaTree?.proof) ? shaTree.proof.length : 0}`,
+      `verified: ${shaTree?.verified ? "yes" : "no"}`,
+    ].join("\n");
+  }
+  if (el.phashTreeMeta) {
+    el.phashTreeMeta.textContent = [
+      `leaf: ${phTree?.leafHash || "-"}`,
+      `proof: ${Array.isArray(phTree?.proof) ? phTree.proof.length : 0}`,
+      `verified: ${phTree?.verified ? "yes" : "no"}`,
+    ].join("\n");
+  }
+}
+
+function renderAnchorCard(data) {
+  if (el.anchorSourceVal) {
+    const source = data?.batchAnchor?.source === "solana" ? "Solana + DB" : "DB only";
+    el.anchorSourceVal.textContent = source;
+  }
+  if (el.anchorPayloadVal) {
+    const payload = data?.batchAnchor?.payload;
+    el.anchorPayloadVal.textContent = payload
+      ? JSON.stringify(payload, null, 2)
+      : "-";
+  }
+  if (el.anchorExplorerLink) {
+    const href = data?.batchAnchor?.explorerUrl || "";
+    if (href) {
+      el.anchorExplorerLink.hidden = false;
+      el.anchorExplorerLink.href = href;
+    } else {
+      el.anchorExplorerLink.hidden = true;
+      el.anchorExplorerLink.removeAttribute("href");
+    }
+  }
 }
 
 function renderSearchMeta(result) {
@@ -924,6 +977,10 @@ function renderMerkleStub() {
   lastVerificationPayload = null;
   renderSearchMeta(lastSearchResult);
   if (el.merkleChainPanel) el.merkleChainPanel.hidden = true;
+  if (el.anchorExplorerLink) {
+    el.anchorExplorerLink.hidden = true;
+    el.anchorExplorerLink.removeAttribute("href");
+  }
   setMerkleIntroParagraph(el.merkleIntro, t("merkleIntro", { count: "—" }));
   if (el.merkleVerifyResult) {
     el.merkleVerifyResult.textContent = "";

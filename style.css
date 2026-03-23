@@ -494,6 +494,55 @@ body {
   background: rgba(20, 241, 149, 0.06);
 }
 
+.merkle-tree-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+@media (min-width: 720px) {
+  .merkle-tree-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.merkle-tree-card {
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.merkle-tree-meta {
+  margin-top: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.merkle-anchor-card {
+  margin-top: 6px;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(49, 130, 246, 0.18);
+  background: rgba(49, 130, 246, 0.05);
+}
+
+.merkle-anchor-payload {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.merkle-anchor-link {
+  display: inline-flex;
+  margin-top: 12px;
+}
+
 .merkle-chain-title {
   font-weight: 700;
   font-size: 0.95rem;
