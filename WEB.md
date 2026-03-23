@@ -7,9 +7,7 @@
 기본 헤더 마크는 투명 배경 **`logo-mark.svg`** 입니다. 공식 실루엣 PNG만 있으면 디자인 툴로 누끼 딴 뒤 SVG/PNG로 바꿔 넣거나, `logo-mark.svg` 경로만 교체하면 됩니다.  
 전체 **`logo.png`** 는 배포에 포함되며, **`?logo=https://...`** 로 다른 이미지를 쓸 수 있습니다 (흰 배경 PNG는 CSS에서 곱하기 블렌드로 배경을 줄입니다).
 
-검증 페이지에서 **Backpack 연결** 버튼으로 브라우저 확장 지갑을 연 다음, Solana 주소가 `owner` 입력란에 채워집니다. 이후 업로드 시 해당 `owner`로 등록됩니다. (Phantom 등 다른 지갑은 이 버튼에서 연결하지 않습니다.)
-
-검증 페이지에서 **사진/동영상 파일을 업로드**하면 `POST /v1/verify/upload`로 등록되고, 서버가 `{ asset, verification }` JSON으로 응답합니다. 로컬은 `npx serve .` + 서버 `npm run dev`면 기본으로 `http://localhost:4000`을 씁니다. GitHub Pages는 **`VERITY_PAGES_API` 변수 주입** 또는 **`?api=`** 로 백엔드를 지정합니다.
+**Backpack 연결**로 브라우저 확장 지갑을 연 뒤 Solana 주소가 `owner`에 채워지고, **사진/동영상 업로드** 시 `POST /v1/verify/upload`로 해당 `owner`가 서버에 전달됩니다. (이 버튼은 Backpack 전용이며 Phantom 등은 연결하지 않습니다.) 로컬은 `npx serve .` + 서버 `npm run dev`면 기본 `http://localhost:4000`을 씁니다. GitHub Pages는 **`VERITY_PAGES_API`** 또는 **`?api=`** 로 백엔드를 지정합니다.
 
 ## 로컬 실행
 
