@@ -6,16 +6,18 @@ import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
-  TextInput,
   ActivityIndicator,
   Platform,
   StatusBar,
   Alert,
+  Linking,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 import {
-  fetchVerificationByToken,
   recheckVerificationByToken,
+  uploadVerificationMedia,
+  MediaType,
   VerificationMerkleTree,
   VerificationLookupPayload,
 } from "../utils/verityApi";
@@ -33,6 +35,13 @@ import { ui } from "../theme/tokens";
 interface VerifyScreenProps {
   onBack: () => void;
   initialToken?: string;
+}
+
+interface SelectedMediaState {
+  uri: string;
+  mediaType: MediaType;
+  fileName?: string | null;
+  mimeType?: string | null;
 }
 
 const cardShadow =
@@ -175,8 +184,8 @@ export default function VerifyScreen({
   onBack,
   initialToken = "",
 }: VerifyScreenProps) {
-  const [token, setToken] = useState(initialToken.trim());
-  const [loading, setLoading] = useState(false);
+  const [selectedMedia, setSelectedMedia] = useState<SelectedMediaState | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [rechecking, setRechecking] = useState(false);
   const [verifyingMerkle, setVerifyingMerkle] = useState(false);
   const [data, setData] = useState<VerificationLookupPayload | null>(null);
@@ -246,30 +255,52 @@ export default function VerifyScreen({
     };
   }, [data, proofList]);
 
-  const lookup = useCallback(async () => {
-    const t = token.trim();
-    if (!t) {
-      Alert.alert("알림", "검증 토큰을 입력하세요.");
+  const pickMedia = useCallback(async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert("권한 필요", "사진/영상 검증을 위해 미디어 라이브러리 접근 권한이 필요합니다.");
       return;
     }
-    setLoading(true);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images", "videos"],
+      quality: 1,
+      allowsMultipleSelection: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    const mediaType: MediaType = asset.type === "video" ? "video" : "photo";
+    setSelectedMedia({
+      uri: asset.uri,
+      mediaType,
+      fileName: asset.fileName ?? null,
+      mimeType: asset.mimeType ?? null,
+    });
+    setError(null);
+  }, []);
+
+  const uploadAndVerify = useCallback(async () => {
+    if (!selectedMedia) {
+      Alert.alert("알림", "검증할 사진 또는 영상을 먼저 선택하세요.");
+      return;
+    }
+    setUploading(true);
     setError(null);
     setMerkleMsg(null);
     setMerkleOk(null);
     setMerkleViz("idle");
     try {
-      const payload = await fetchVerificationByToken(t);
-      setData(payload);
+      const payload = await uploadVerificationMedia(selectedMedia);
+      setData(payload.verification);
     } catch (e) {
       setData(null);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
-      setLoading(false);
+      setUploading(false);
     }
-  }, [token]);
+  }, [selectedMedia]);
 
   const recheck = useCallback(async () => {
-    const t = token.trim();
+    const t = (data?.token || initialToken || "").trim();
     if (!t || !data) return;
     setRechecking(true);
     setError(null);
@@ -281,7 +312,7 @@ export default function VerifyScreen({
     } finally {
       setRechecking(false);
     }
-  }, [token, data]);
+  }, [data, initialToken]);
 
   const runMerkleVerify = useCallback(async () => {
     if (!data) return;
@@ -337,7 +368,7 @@ export default function VerifyScreen({
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={ui.canvas} />
-      <View style={styles.toolbar}>
+        <View style={styles.toolbar}>
         <TouchableOpacity onPress={onBack} style={styles.backBtn} hitSlop={12}>
           <Ionicons name="arrow-back" size={24} color={ui.text} />
         </TouchableOpacity>
@@ -351,30 +382,38 @@ export default function VerifyScreen({
         keyboardShouldPersistTaps="handled"
       >
         <View style={[styles.card, cardShadow]}>
-          <Text style={styles.cardTitle}>토큰</Text>
+          <Text style={styles.cardTitle}>업로드 검증</Text>
           <Text style={styles.cardHint}>
-            QR·공유 링크의 토큰을 입력하거나 URL로 들어온 값이 위에 채워집니다.
+            사진이나 영상을 선택하면 앱이 서버로 업로드하고, 서버가 해시를 계산해 배치/머클트리/루트해시/Solana 앵커까지 확인합니다.
           </Text>
-          <TextInput
-            style={styles.input}
-            value={token}
-            onChangeText={setToken}
-            placeholder="검증 토큰"
-            placeholderTextColor={ui.textMuted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!loading}
-          />
           <TouchableOpacity
-            style={[styles.primaryBtn, loading && styles.btnDisabled]}
-            onPress={lookup}
-            disabled={loading}
+            style={[styles.outlineBtn, uploading && styles.btnDisabled]}
+            onPress={pickMedia}
+            disabled={uploading}
             activeOpacity={0.85}
           >
-            {loading ? (
+            <Text style={styles.outlineBtnText}>사진/영상 선택</Text>
+          </TouchableOpacity>
+          {selectedMedia ? (
+            <View style={styles.selectedMediaCard}>
+              <Text style={styles.selectedMediaLabel}>
+                선택됨: {selectedMedia.mediaType === "video" ? "영상" : "사진"}
+              </Text>
+              <Text style={styles.selectedMediaPath} numberOfLines={2}>
+                {selectedMedia.fileName || selectedMedia.uri}
+              </Text>
+            </View>
+          ) : null}
+          <TouchableOpacity
+            style={[styles.primaryBtn, uploading && styles.btnDisabled]}
+            onPress={uploadAndVerify}
+            disabled={uploading}
+            activeOpacity={0.85}
+          >
+            {uploading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.primaryBtnText}>조회</Text>
+              <Text style={styles.primaryBtnText}>업로드 후 검증</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -422,6 +461,46 @@ export default function VerifyScreen({
             />
             <Field label="SHA-256" value={data.sha256} mono small />
             <Field label="pHash" value={data.phash} mono small />
+            <Field
+              label="앵커 저장 위치"
+              value={
+                data.batchAnchor?.source === "solana" ? "Solana + DB" : "DB only"
+              }
+            />
+            <Field
+              label="배치 SHA-256 루트"
+              value={data.batchMerkleRoots?.sha256}
+              mono
+              small
+            />
+            <Field
+              label="배치 pHash 루트"
+              value={data.batchMerkleRoots?.phash}
+              mono
+              small
+            />
+            <Field
+              label="배치 TX / 서명"
+              value={data.batchAnchor?.txHash || data.chainTxSignature}
+              mono
+              small
+            />
+            {data.batchAnchor?.payload ? (
+              <View style={styles.anchorPayloadBox}>
+                <Text style={styles.proofTitle}>Solana / DB 앵커 payload</Text>
+                <Text style={styles.anchorPayloadText} selectable>
+                  {JSON.stringify(data.batchAnchor.payload, null, 2)}
+                </Text>
+              </View>
+            ) : null}
+            {data.batchAnchor?.explorerUrl ? (
+              <TouchableOpacity
+                style={[styles.outlineBtn, { marginBottom: 12 }]}
+                onPress={() => Linking.openURL(String(data.batchAnchor?.explorerUrl))}
+              >
+                <Text style={styles.outlineBtnText}>Solana Explorer 열기</Text>
+              </TouchableOpacity>
+            ) : null}
 
             <Text style={[styles.sectionLabel, { marginTop: 16 }]}>
               머클 · 배치
@@ -576,17 +655,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: ui.textSecondary,
     lineHeight: 19,
-    marginBottom: 12,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: ui.border,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
-    color: ui.text,
-    backgroundColor: ui.canvas,
     marginBottom: 12,
   },
   primaryBtn: {
@@ -809,5 +877,37 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     textTransform: "uppercase",
     letterSpacing: 0.4,
+  },
+  selectedMediaCard: {
+    marginTop: 12,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: ui.canvas,
+    borderWidth: 1,
+    borderColor: ui.borderLight,
+  },
+  selectedMediaLabel: {
+    color: ui.primary,
+    fontSize: 12,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+  selectedMediaPath: {
+    color: ui.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  anchorPayloadBox: {
+    marginBottom: 12,
+    padding: 12,
+    backgroundColor: ui.canvas,
+    borderRadius: 10,
+  },
+  anchorPayloadText: {
+    fontSize: 11,
+    lineHeight: 16,
+    color: ui.text,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
   },
 });

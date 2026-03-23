@@ -353,6 +353,18 @@ export interface VerificationLookupPayload {
     sha256?: VerificationMerkleTree | null;
     phash?: VerificationMerkleTree | null;
   };
+  batchMerkleRoots?: {
+    primary?: string | null;
+    sha256?: string | null;
+    phash?: string | null;
+  } | null;
+  batchAnchor?: {
+    txHash?: string | null;
+    blockNumber?: number | null;
+    payload?: Record<string, unknown> | null;
+    explorerUrl?: string | null;
+    source?: string | null;
+  } | null;
   chainTxSignature?: string | null;
   chainVerified?: boolean;
   duplicateScore?: number | null;
@@ -369,6 +381,11 @@ export interface VerificationMerkleTree {
   computedRoot?: string | null;
   verified?: boolean;
   reason?: string | null;
+}
+
+export interface UploadVerificationResult {
+  asset: VerificationAssetRecord & { token?: string };
+  verification: VerificationLookupPayload;
 }
 
 export async function fetchVerificationByToken(
@@ -402,6 +419,44 @@ export async function recheckVerificationByToken(
     const msg =
       (body as { message?: string }).message ||
       `재검증 요청 실패 (${res.status})`;
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function uploadVerificationMedia(input: {
+  uri: string;
+  mediaType: MediaType;
+  fileName?: string | null;
+  mimeType?: string | null;
+  owner?: string | null;
+}): Promise<UploadVerificationResult> {
+  if (!API_BASE_URL) throw new Error("API URL이 설정되지 않았습니다.");
+
+  const formData = new FormData();
+  formData.append("file", {
+    uri: input.uri,
+    name:
+      input.fileName ||
+      `${input.mediaType === "video" ? "verify-video" : "verify-image"}-${
+        Date.now()
+      }${input.mediaType === "video" ? ".mp4" : ".jpg"}`,
+    type:
+      input.mimeType ||
+      (input.mediaType === "video" ? "video/mp4" : "image/jpeg"),
+  } as any);
+  if (input.owner && input.owner.trim()) {
+    formData.append("owner", input.owner.trim());
+  }
+
+  const res = await fetch(`${API_BASE_URL}/v1/verify/upload`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      (body as { message?: string }).message || `업로드 검증 실패 (${res.status})`;
     throw new Error(msg);
   }
   return res.json();
