@@ -6,19 +6,13 @@ import {
   StyleSheet,
   SafeAreaView,
   StatusBar,
-  ActivityIndicator,
   Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ui } from "../theme/tokens";
 
 interface HomeScreenProps {
-  connected: boolean;
-  connecting: boolean;
-  address: string | null;
-  balance: number;
-  onConnect: () => void;
-  onDisconnect: () => void;
+  ownerAddress: string;
   onNavigateCamera: () => void;
   onNavigateHistory: () => void;
 }
@@ -34,18 +28,14 @@ const cardShadow =
     : { elevation: 2 };
 
 export default function HomeScreen({
-  connected,
-  connecting,
-  address,
-  balance,
-  onConnect,
-  onDisconnect,
+  ownerAddress,
   onNavigateCamera,
   onNavigateHistory,
 }: HomeScreenProps) {
-  const shortAddress = address
-    ? `${address.slice(0, 6)}…${address.slice(-4)}`
-    : "";
+  const owner = ownerAddress.trim();
+  const ownerReady = owner.length > 0;
+  const ownerShort =
+    owner.length > 14 ? `${owner.slice(0, 8)}…${owner.slice(-6)}` : owner;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -53,44 +43,38 @@ export default function HomeScreen({
 
       <View style={styles.header}>
         <Text style={styles.logo}>Verity</Text>
-        <Text style={styles.subtitle}>사진 원본 증명 · Solana</Text>
+        <Text style={styles.subtitle}>사진 원본 증명</Text>
       </View>
 
-      <View style={styles.walletSection}>
-        {connected ? (
-          <View style={[styles.walletCard, cardShadow]}>
-            <View style={styles.walletRow}>
-              <View style={styles.walletIconWrap}>
-                <Ionicons name="wallet" size={22} color={ui.primary} />
+      <View style={styles.infoSection}>
+        {ownerReady ? (
+          <View style={[styles.ownerCard, cardShadow]}>
+            <View style={styles.ownerRow}>
+              <View style={styles.ownerIconWrap}>
+                <Ionicons name="person-circle-outline" size={24} color={ui.primary} />
               </View>
-              <Text style={styles.walletAddress}>{shortAddress}</Text>
+              <View style={styles.ownerTextBlock}>
+                <Text style={styles.ownerLabel}>등록 소유자 (API owner)</Text>
+                <Text style={styles.ownerValue} selectable>
+                  {ownerShort}
+                </Text>
+              </View>
             </View>
-            <Text style={styles.balanceLabel}>잔액</Text>
-            <Text style={styles.balanceValue}>{balance.toFixed(4)} SOL</Text>
-            <TouchableOpacity
-              style={styles.textButton}
-              onPress={onDisconnect}
-              hitSlop={{ top: 8, bottom: 8, left: 16, right: 16 }}
-            >
-              <Text style={styles.disconnectText}>연결 해제</Text>
-            </TouchableOpacity>
+            <Text style={styles.ownerHint}>
+              지갑 연동은 메인 서버에서 처리합니다. 빌드 설정의
+              verityOwnerAddress를 서버와 맞춰 주세요.
+            </Text>
           </View>
         ) : (
-          <TouchableOpacity
-            style={[styles.connectButton, cardShadow]}
-            onPress={onConnect}
-            disabled={connecting}
-            activeOpacity={0.88}
-          >
-            {connecting ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <>
-                <Ionicons name="wallet-outline" size={22} color="#FFFFFF" />
-                <Text style={styles.connectText}>지갑 연결</Text>
-              </>
-            )}
-          </TouchableOpacity>
+          <View style={[styles.warnCard, cardShadow]}>
+            <Ionicons name="alert-circle-outline" size={22} color={ui.danger} />
+            <Text style={styles.warnTitle}>소유자 주소 미설정</Text>
+            <Text style={styles.warnBody}>
+              app.json의 extra.verityOwnerAddress 또는 환경 변수
+              EXPO_PUBLIC_VERITY_OWNER_ADDRESS에 서버에 등록할 owner 문자열을
+              넣은 뒤 다시 빌드하세요.
+            </Text>
+          </View>
         )}
       </View>
 
@@ -99,24 +83,24 @@ export default function HomeScreen({
           style={[
             styles.actionCard,
             cardShadow,
-            !connected && styles.actionCardDisabled,
+            !ownerReady && styles.actionCardDisabled,
           ]}
           onPress={onNavigateCamera}
-          disabled={!connected}
+          disabled={!ownerReady}
           activeOpacity={0.85}
         >
           <View style={styles.actionIconCircle}>
             <Ionicons
               name="camera"
               size={26}
-              color={connected ? ui.primary : ui.textMuted}
+              color={ownerReady ? ui.primary : ui.textMuted}
             />
           </View>
           <View style={styles.actionTextBlock}>
             <Text
               style={[
                 styles.actionTitle,
-                !connected && styles.actionTitleDisabled,
+                !ownerReady && styles.actionTitleDisabled,
               ]}
             >
               사진 촬영 & 등록
@@ -128,7 +112,7 @@ export default function HomeScreen({
           <Ionicons
             name="chevron-forward"
             size={20}
-            color={connected ? ui.textMuted : ui.border}
+            color={ownerReady ? ui.textMuted : ui.border}
           />
         </TouchableOpacity>
 
@@ -136,24 +120,24 @@ export default function HomeScreen({
           style={[
             styles.actionCard,
             cardShadow,
-            !connected && styles.actionCardDisabled,
+            !ownerReady && styles.actionCardDisabled,
           ]}
           onPress={onNavigateHistory}
-          disabled={!connected}
+          disabled={!ownerReady}
           activeOpacity={0.85}
         >
           <View style={[styles.actionIconCircle, styles.actionIconCircleAlt]}>
             <Ionicons
               name="time-outline"
               size={26}
-              color={connected ? ui.success : ui.textMuted}
+              color={ownerReady ? ui.success : ui.textMuted}
             />
           </View>
           <View style={styles.actionTextBlock}>
             <Text
               style={[
                 styles.actionTitle,
-                !connected && styles.actionTitleDisabled,
+                !ownerReady && styles.actionTitleDisabled,
               ]}
             >
               등록 히스토리
@@ -165,13 +149,13 @@ export default function HomeScreen({
           <Ionicons
             name="chevron-forward"
             size={20}
-            color={connected ? ui.textMuted : ui.border}
+            color={ownerReady ? ui.textMuted : ui.border}
           />
         </TouchableOpacity>
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Verity · SVM</Text>
+        <Text style={styles.footerText}>Verity</Text>
       </View>
     </SafeAreaView>
   );
@@ -199,23 +183,23 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontWeight: "500",
   },
-  walletSection: {
+  infoSection: {
     paddingHorizontal: 20,
     marginBottom: 28,
   },
-  walletCard: {
+  ownerCard: {
     backgroundColor: ui.surface,
     borderRadius: 20,
-    padding: 22,
+    padding: 20,
     borderWidth: 1,
     borderColor: ui.borderLight,
   },
-  walletRow: {
+  ownerRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
   },
-  walletIconWrap: {
+  ownerIconWrap: {
     width: 44,
     height: 44,
     borderRadius: 14,
@@ -223,47 +207,42 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  walletAddress: {
-    flex: 1,
-    fontSize: 16,
-    color: ui.text,
+  ownerTextBlock: { flex: 1 },
+  ownerLabel: {
+    fontSize: 12,
+    color: ui.textSecondary,
     fontWeight: "600",
+    marginBottom: 4,
   },
-  balanceLabel: {
+  ownerValue: {
+    fontSize: 15,
+    color: ui.text,
+    fontWeight: "700",
+  },
+  ownerHint: {
+    marginTop: 14,
     fontSize: 13,
     color: ui.textSecondary,
-    marginTop: 18,
-    fontWeight: "500",
+    lineHeight: 19,
   },
-  balanceValue: {
-    fontSize: 28,
+  warnCard: {
+    backgroundColor: ui.surface,
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: ui.borderLight,
+    gap: 8,
+  },
+  warnTitle: {
+    fontSize: 16,
     fontWeight: "700",
     color: ui.text,
+  },
+  warnBody: {
+    fontSize: 13,
+    color: ui.textSecondary,
+    lineHeight: 19,
     marginTop: 4,
-    letterSpacing: -0.5,
-  },
-  textButton: {
-    alignSelf: "flex-start",
-    marginTop: 16,
-  },
-  disconnectText: {
-    color: ui.danger,
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  connectButton: {
-    backgroundColor: ui.primary,
-    borderRadius: 16,
-    paddingVertical: 18,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 10,
-  },
-  connectText: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#FFFFFF",
   },
   actions: {
     paddingHorizontal: 20,

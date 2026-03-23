@@ -1,13 +1,12 @@
 import "./src/polyfills";
-import React, { useState } from "react";
-import { Alert } from "react-native";
+import React, { useMemo, useState } from "react";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import HomeScreen from "./src/screens/HomeScreen";
 import CameraScreen from "./src/screens/CameraScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
-import { useWallet } from "./src/hooks/useWallet";
 import { useVerityHash } from "./src/hooks/useVerityHash";
 import { AppErrorBoundary } from "./src/AppErrorBoundary";
+import { resolveVerityOwnerAddress } from "./src/utils/verityOwner";
 
 type Screen = "home" | "camera" | "history";
 
@@ -24,23 +23,8 @@ export default function App() {
 function AppInner() {
   const [currentScreen, setCurrentScreen] = useState<Screen>("home");
 
-  const wallet = useWallet();
-
-  const photoHash = useVerityHash(
-    wallet.publicKey,
-    wallet.signAndSendTransaction
-  );
-
-  const handleConnect = async () => {
-    try {
-      await wallet.connect();
-    } catch {
-      Alert.alert(
-        "연결 실패",
-        "지갑 연결에 실패했습니다. Phantom 앱이 설치되어 있는지 확인해주세요."
-      );
-    }
-  };
+  const ownerAddress = useMemo(() => resolveVerityOwnerAddress(), []);
+  const photoHash = useVerityHash(ownerAddress);
 
   const handleNavigateCamera = () => {
     photoHash.reset();
@@ -81,12 +65,7 @@ function AppInner() {
     default:
       return (
         <HomeScreen
-          connected={wallet.connected}
-          connecting={wallet.connecting}
-          address={wallet.address}
-          balance={wallet.balance}
-          onConnect={handleConnect}
-          onDisconnect={wallet.disconnect}
+          ownerAddress={ownerAddress}
           onNavigateCamera={handleNavigateCamera}
           onNavigateHistory={() => setCurrentScreen("history")}
         />

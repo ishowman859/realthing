@@ -63,9 +63,9 @@ interface CameraScreenProps {
 const STATUS_LABELS: Record<RegistrationStatus, string> = {
   idle: "",
   computing_hash: "pHash / SHA-256 계산 중...",
-  building_tx: "트랜잭션 생성 중...",
-  awaiting_signature: "지갑 서명 대기 중...",
-  confirming: "블록체인 확인 중...",
+  building_tx: "처리 준비 중...",
+  awaiting_signature: "서버 전송 준비 중...",
+  confirming: "서버에 등록 중...",
   success: "등록 완료!",
   error: "오류 발생",
 };

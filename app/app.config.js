@@ -17,5 +17,9 @@ module.exports = () => ({
       process.env.EXPO_PUBLIC_VERITY_API_URL?.trim() ||
       expo.extra?.verityApiUrl ||
       "http://98.84.127.220:4000",
+    verityOwnerAddress:
+      process.env.EXPO_PUBLIC_VERITY_OWNER_ADDRESS?.trim() ||
+      expo.extra?.verityOwnerAddress ||
+      "",
   },
 });

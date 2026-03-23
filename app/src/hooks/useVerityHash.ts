@@ -1,5 +1,4 @@
 import { useState, useCallback } from "react";
-import { PublicKey, Transaction } from "@solana/web3.js";
 import { computePhash, computeSha256 } from "../utils/phash";
 import { extractVideoPhashKeyframes } from "../utils/videoPhash";
 import {
@@ -31,10 +30,7 @@ interface VerityHashState {
   loadingRecords: boolean;
 }
 
-export function useVerityHash(
-  walletPublicKey: PublicKey | null,
-  signAndSend: (tx: Transaction) => Promise<string>
-) {
+export function useVerityHash(ownerAddress: string) {
   const [state, setState] = useState<VerityHashState>({
     status: "idle",
     currentPhash: null,
@@ -56,11 +52,13 @@ export function useVerityHash(
       metadata?: Record<string, unknown>,
       opts?: { mediaType?: "photo" | "video" }
     ) => {
-      if (!walletPublicKey) {
+      const owner = ownerAddress.trim();
+      if (!owner) {
         setState((prev) => ({
           ...prev,
           status: "error",
-          error: "지갑이 연결되지 않았습니다",
+          error:
+            "소유자(owner) 주소가 없습니다. app.json extra.verityOwnerAddress 또는 EXPO_PUBLIC_VERITY_OWNER_ADDRESS 를 설정하세요.",
         }));
         return;
       }
@@ -116,7 +114,7 @@ export function useVerityHash(
           }));
 
           const record = await registerSha256Ingest({
-            owner: walletPublicKey.toBase58(),
+            owner,
             sha256,
             phash: phashVal ?? undefined,
             mediaType,
@@ -162,7 +160,7 @@ export function useVerityHash(
         }));
 
         const record = await registerAsset({
-          owner: walletPublicKey.toBase58(),
+          owner,
           mode,
           mediaType: "photo",
           sourceUri: undefined,
@@ -212,22 +210,23 @@ export function useVerityHash(
         }));
       }
     },
-    [walletPublicKey, signAndSend]
+    [ownerAddress]
   );
 
   const loadRecords = useCallback(async () => {
-    if (!walletPublicKey) return;
+    const owner = ownerAddress.trim();
+    if (!owner) return;
 
     setState((prev) => ({ ...prev, loadingRecords: true }));
 
     try {
-      const records = await listAssets(walletPublicKey.toBase58());
+      const records = await listAssets(owner);
       setState((prev) => ({ ...prev, records, loadingRecords: false }));
     } catch (error) {
       console.error("Failed to load records:", error);
       setState((prev) => ({ ...prev, loadingRecords: false }));
     }
-  }, [walletPublicKey]);
+  }, [ownerAddress]);
 
   const reset = useCallback(() => {
     setState((prev) => ({
