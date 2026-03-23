@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="ko">
   <head>
-    <!-- GitHub Actions에서 변수 VERITY_PAGES_API 로 content 주입 가능 (?api= 가 우선) -->
-    <meta name="verity-default-api" content="" />
+    <!-- GitHub Actions의 VERITY_PAGES_API 가 빌드 시 덮어씀. ?api= 가 항상 최우선. -->
+    <meta name="verity-default-api" content="http://98.84.127.220:4000" />
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Verity Verification</title>
@@ -138,6 +138,28 @@
 
       <section class="card card--glass card--merkle" id="merkleCard">
         <div id="labelMerkleSection" class="label label--section">머클 경로 검증</div>
+        <div id="merkleChainPanel" class="merkle-chain-panel" hidden>
+          <div id="merkleChainTitle" class="merkle-chain-title"></div>
+          <div class="grid merkle-grid">
+            <div class="field">
+              <div id="labelIndexedBlock" class="label"></div>
+              <div id="indexedBlockVal" class="value mono">-</div>
+            </div>
+            <div class="field field--wide">
+              <div id="labelStoredRoot" class="label"></div>
+              <div id="storedRootVal" class="value mono value--hash">-</div>
+            </div>
+            <div class="field field--wide">
+              <div id="labelComputedRoot" class="label"></div>
+              <div id="computedRootVal" class="value mono value--hash">-</div>
+            </div>
+            <div class="field field--wide">
+              <div id="labelChainTx" class="label"></div>
+              <div id="chainTxVal" class="value mono value--hash">-</div>
+            </div>
+          </div>
+          <p id="merkleChainNote" class="merkle-chain-note"></p>
+        </div>
         <p id="merkleIntro" class="merkle-intro"></p>
         <div id="merklePending" class="merkle-pending" hidden></div>
         <div id="merkleActive" class="merkle-active" hidden>
@@ -188,6 +210,6 @@
       </section>
     </main>
 
-    <script src="script.js?v=6" defer></script>
+    <script src="script.js?v=8" defer></script>
   </body>
 </html>

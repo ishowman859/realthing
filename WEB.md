@@ -9,6 +9,8 @@
 
 **Backpack 연결**로 브라우저 확장 지갑을 연 뒤 Solana 주소가 `owner`에 채워지고, **사진/동영상 업로드** 시 `POST /v1/verify/upload`로 해당 `owner`가 서버에 전달됩니다. (이 버튼은 Backpack 전용이며 Phantom 등은 연결하지 않습니다.) 로컬은 `npx serve .` + 서버 `npm run dev`면 기본 `http://localhost:4000`을 씁니다. GitHub Pages는 **`VERITY_PAGES_API`** 또는 **`?api=`** 로 백엔드를 지정합니다.
 
+**앱에서 연 검증 링크**가 `http://API호스트:4000/v/토큰` 형태일 때는, `server`가 같은 호스트에서 검증 UI를 제공하므로( `server/README.md` 참고) 별도 Pages 없이도 열립니다. 페이지 상단 머클 카드에 **봉인된 루트·재계산 루트·인덱스 블록·경로(이웃 해시)** 가 함께 표시됩니다.
+
 ## 로컬 실행
 
 저장소 루트에서:
@@ -23,7 +25,7 @@ npx serve .
 
 1. `window.__VERITY_API_BASE__` (스크립트보다 먼저 설정한 경우)
 2. URL 쿼리: **`?api=https://백엔드주소`** (빌드에 박힌 값보다 우선)
-3. `<meta name="verity-default-api" content="..." />` — 로컬 `index.html` / `admin.html`에 직접 넣거나, **GitHub Actions 배포 시 주입**
+3. `<meta name="verity-default-api" content="..." />` — 기본값은 저장소에 **`http://98.84.127.220:4000`** 이 박혀 있으며, **GitHub Actions**의 `VERITY_PAGES_API`로 배포 시 덮어쓸 수 있음 (HTTPS Pages에서는 `http` 메타는 브라우저 혼합 콘텐츠 방지를 위해 무시되므로 **`https` API** 또는 `?api=` 필요)
 4. 로컬(`localhost` / `127.0.0.1`)이면 `http://localhost:4000`
 5. 그 외(예: Vercel에서 `/api` 프록시)에는 `/api`
 

@@ -1,3 +1,5 @@
+const DEFAULT_VERITY_PUBLIC_API = "http://98.84.127.220:4000";
+
 const params = new URLSearchParams(window.location.search);
 const isGithubPages =
   /\.github\.io$/i.test(window.location.hostname) ||
@@ -14,14 +16,21 @@ function normalizeApiBase(b) {
   return String(b).trim().replace(/\/+$/, "");
 }
 
+function apiMetaForSecureSite() {
+  if (!apiFromMeta) return "";
+  if (typeof window !== "undefined" && window.location.protocol === "https:") {
+    if (/^http:\/\//i.test(apiFromMeta)) return "";
+  }
+  return apiFromMeta;
+}
+
 const defaultApiBase = normalizeApiBase(
   params.get("api") ||
-    apiFromMeta ||
     (h === "localhost" || h === "127.0.0.1"
       ? "http://localhost:4000"
       : isGithubPages
-        ? ""
-        : "/api")
+        ? apiMetaForSecureSite()
+        : apiFromMeta || DEFAULT_VERITY_PUBLIC_API)
 );
 const apiBaseInput = document.getElementById("apiBase");
 const adminTokenInput = document.getElementById("adminToken");

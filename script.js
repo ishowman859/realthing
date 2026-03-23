@@ -1,4 +1,7 @@
 // Verity 검증 페이지 — API 연동 및 i18n
+/** 저장소 기본 백엔드 (?api= · meta · Actions 변수가 우선). Pages(HTTPS)에서는 http 메타는 쓰지 않음(혼합 콘텐츠). */
+const DEFAULT_VERITY_PUBLIC_API = "http://98.84.127.220:4000";
+
 const __params = new URLSearchParams(window.location.search);
 const __apiFromQuery = __params.get("api");
 const __apiFromMeta =
@@ -11,6 +14,23 @@ const __verityStaticPages =
   document.querySelector('meta[name="verity-gh-pages"]')?.getAttribute("content") === "1";
 const __host = window.location.hostname;
 
+/** GitHub Pages 등 HTTPS 페이지에서는 meta의 http:// API를 무시 (?api= 또는 VERITY_PAGES_API 권장) */
+function __apiMetaForSecureSite() {
+  if (!__apiFromMeta) return "";
+  if (typeof window !== "undefined" && window.location.protocol === "https:") {
+    if (/^http:\/\//i.test(__apiFromMeta)) return "";
+  }
+  return __apiFromMeta;
+}
+
+/** API와 검증 페이지가 같은 호스트일 때(예: `http://서버:4000/v/토큰`) 자동으로 API 베이스를 맞춤 */
+function inferApiBaseFromVerifyPageUrl() {
+  if (__verityStaticPages) return "";
+  const p = window.location.pathname;
+  if (/\/v\/[^/]+/i.test(p)) return window.location.origin;
+  return "";
+}
+
 function __normalizeApiBase(b) {
   if (!b) return "";
   return String(b).trim().replace(/\/+$/, "");
@@ -19,11 +39,12 @@ function __normalizeApiBase(b) {
 const API_BASE = __normalizeApiBase(
   window.__VERITY_API_BASE__ ||
     __apiFromQuery ||
+    inferApiBaseFromVerifyPageUrl() ||
     (__host === "localhost" || __host === "127.0.0.1"
       ? "http://localhost:4000"
       : __verityStaticPages
-        ? __apiFromMeta || ""
-        : "/api")
+        ? __apiMetaForSecureSite()
+        : __apiFromMeta || DEFAULT_VERITY_PUBLIC_API)
 );
 
 const I18N = {
@@ -101,6 +122,13 @@ const I18N = {
     merkleCompareWrongMode: "pHash 모드에서는 파일 SHA-256 대조를 쓰지 않습니다.",
     merkleNoFile: "파일을 먼저 선택하세요.",
     merkleNoDataYet: "파일을 업로드하거나 공유 링크로 조회하면 이웃 해시(머클 경로)가 여기 표시됩니다.",
+    merkleChainTitle: "머클 트리 · 배치 머클 루트 (Solana 연동 MVP)",
+    labelIndexedBlock: "인덱스 블록(분 단위 배치)",
+    labelStoredRoot: "봉인된 머클 루트",
+    labelComputedRoot: "서버 재계산 머클 루트",
+    labelChainTx: "배치 트랜잭션/서명",
+    merkleChainNote:
+      "자산은 분(minute) 단위 배치로 묶여 머클 트리가 만들어지고, 위 루트·아래 이웃 해시(경로)로 온체인 인덱스와 대조합니다. 실제 Solana 메인넷 앵커는 운영 환경에 맞게 확장하면 됩니다.",
   },
   en: {
     htmlTitle: "Verity Verification",
@@ -175,6 +203,13 @@ const I18N = {
     merkleCompareWrongMode: "File SHA-256 compare is for SHA-256 mode only.",
     merkleNoFile: "Choose a file first.",
     merkleNoDataYet: "Upload a file or open a shared link to load the sibling hashes (Merkle path) here.",
+    merkleChainTitle: "Merkle tree · batch root (Solana MVP)",
+    labelIndexedBlock: "Indexed block (minute batch)",
+    labelStoredRoot: "Sealed Merkle root",
+    labelComputedRoot: "Server-recomputed Merkle root",
+    labelChainTx: "Batch tx / signature",
+    merkleChainNote:
+      "Assets are batched per minute; the root above and the sibling hashes below form the Merkle path checked against the indexed batch. Wire real Solana anchoring for your network.",
   },
   ja: {
     htmlTitle: "Verity 検証ページ",
@@ -245,6 +280,13 @@ const I18N = {
     merkleCompareWrongMode: "pHash モードではファイル SHA-256 照合はありません。",
     merkleNoFile: "先にファイルを選んでください。",
     merkleNoDataYet: "ファイルをアップロードするか共有リンクで開くと、隣接ハッシュ（マークルパス）が表示されます。",
+    merkleChainTitle: "マークルツリー・バッチルート（Solana MVP）",
+    labelIndexedBlock: "インデックスブロック（分単位バッチ）",
+    labelStoredRoot: "封切られたマークルルート",
+    labelComputedRoot: "サーバー再計算ルート",
+    labelChainTx: "バッチ Tx / 署名",
+    merkleChainNote:
+      "アセットは分単位バッチでまとめられ、上記ルートと下の隣接ハッシュでインデックスと照合します。本番 Solana アンカーは環境に合わせて接続してください。",
   },
   zh: {
     htmlTitle: "Verity 验证页面",
@@ -314,6 +356,13 @@ const I18N = {
     merkleCompareWrongMode: "仅 SHA-256 模式支持文件 SHA-256 对照。",
     merkleNoFile: "请先选择文件。",
     merkleNoDataYet: "上传文件或通过分享链接查询后，将在此显示邻接哈希（默克尔路径）。",
+    merkleChainTitle: "默克尔树 · 批次根（Solana MVP）",
+    labelIndexedBlock: "索引区块（按分钟批次）",
+    labelStoredRoot: "已封存的默克尔根",
+    labelComputedRoot: "服务器重算默克尔根",
+    labelChainTx: "批次交易 / 签名",
+    merkleChainNote:
+      "资产按分钟批次聚合成默克尔树；用上述根与下方邻接哈希路径与索引对照。可按环境接入真实 Solana 上链。",
   },
 };
 
@@ -513,6 +562,17 @@ const el = {
   labelMerkleLeaf: document.getElementById("labelMerkleLeaf"),
   labelMerklePathLen: document.getElementById("labelMerklePathLen"),
   labelMerkleLocal: document.getElementById("labelMerkleLocal"),
+  merkleChainPanel: document.getElementById("merkleChainPanel"),
+  merkleChainTitle: document.getElementById("merkleChainTitle"),
+  labelIndexedBlock: document.getElementById("labelIndexedBlock"),
+  indexedBlockVal: document.getElementById("indexedBlockVal"),
+  labelStoredRoot: document.getElementById("labelStoredRoot"),
+  storedRootVal: document.getElementById("storedRootVal"),
+  labelComputedRoot: document.getElementById("labelComputedRoot"),
+  computedRootVal: document.getElementById("computedRootVal"),
+  labelChainTx: document.getElementById("labelChainTx"),
+  chainTxVal: document.getElementById("chainTxVal"),
+  merkleChainNote: document.getElementById("merkleChainNote"),
 };
 
 let backpackProviderRef = null;
@@ -626,6 +686,11 @@ function applyStaticI18n() {
   if (el.merkleVerifyBtn) el.merkleVerifyBtn.textContent = t("merkleVerifyBtn");
   if (el.merkleCompareBtn) el.merkleCompareBtn.textContent = t("merkleCompareBtn");
   if (el.labelMerkleLocal) setText(el.labelMerkleLocal, t("merkleLocalLabel"));
+  if (el.merkleChainTitle) el.merkleChainTitle.textContent = t("merkleChainTitle");
+  if (el.labelIndexedBlock) el.labelIndexedBlock.textContent = t("labelIndexedBlock");
+  if (el.labelStoredRoot) el.labelStoredRoot.textContent = t("labelStoredRoot");
+  if (el.labelComputedRoot) el.labelComputedRoot.textContent = t("labelComputedRoot");
+  if (el.labelChainTx) el.labelChainTx.textContent = t("labelChainTx");
 }
 
 function formatDateTime(value) {
@@ -669,9 +734,29 @@ function setText(node, value) {
   node.textContent = value && String(value).trim() ? String(value) : "-";
 }
 
+function renderMerkleChain(data) {
+  const panel = el.merkleChainPanel;
+  if (!panel) return;
+  if (!data || !data.token) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  setText(
+    el.indexedBlockVal,
+    data.indexedBlockNumber != null ? String(data.indexedBlockNumber) : "-"
+  );
+  setText(el.storedRootVal, data.merkleRoot || "-");
+  setText(el.computedRootVal, data.computedMerkleRoot || "-");
+  const tx = data.chainTxSignature;
+  setText(el.chainTxVal, tx && String(tx).trim() ? String(tx) : "-");
+  if (el.merkleChainNote) el.merkleChainNote.textContent = t("merkleChainNote");
+}
+
 function renderMerkleStub() {
   if (!el.merkleCard || !el.merkleIntro) return;
   lastVerificationPayload = null;
+  if (el.merkleChainPanel) el.merkleChainPanel.hidden = true;
   setMerkleIntroParagraph(el.merkleIntro, t("merkleIntro", { count: "—" }));
   if (el.merkleVerifyResult) {
     el.merkleVerifyResult.textContent = "";
@@ -873,6 +958,7 @@ function render(data) {
     el.assetEmpty.style.display = "block";
   }
 
+  renderMerkleChain(data);
   renderMerkle(data);
 
   if (data.mode === "sha256") {
