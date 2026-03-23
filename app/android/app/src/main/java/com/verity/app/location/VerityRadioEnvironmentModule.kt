@@ -231,20 +231,8 @@ class VerityRadioEnvironmentModule(private val reactContext: ReactApplicationCon
     when (ci) {
       is CellInfoLte -> {
         val identity = ci.cellIdentity as? CellIdentityLte ?: return null
-        val mcc: Int
-        val mnc: Int
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-          mcc = identity.mccString?.toIntOrNull() ?: return null
-          mnc = identity.mncString?.toIntOrNull() ?: return null
-        } else {
-          @Suppress("DEPRECATION")
-          val mc = identity.mcc
-          @Suppress("DEPRECATION")
-          val mn = identity.mnc
-          if (mc == Int.MAX_VALUE || mn == Int.MAX_VALUE) return null
-          mcc = mc
-          mnc = mn
-        }
+        val mcc = readMcc(identity) ?: return null
+        val mnc = readMnc(identity) ?: return null
         val tac = identity.tac
         if (tac == Int.MAX_VALUE || tac < 0) return null
         val eci = identity.ci
@@ -258,20 +246,8 @@ class VerityRadioEnvironmentModule(private val reactContext: ReactApplicationCon
       }
       is CellInfoWcdma -> {
         val identity = ci.cellIdentity as? CellIdentityWcdma ?: return null
-        val mcc: Int
-        val mnc: Int
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-          mcc = identity.mccString?.toIntOrNull() ?: return null
-          mnc = identity.mncString?.toIntOrNull() ?: return null
-        } else {
-          @Suppress("DEPRECATION")
-          val mc = identity.mcc
-          @Suppress("DEPRECATION")
-          val mn = identity.mnc
-          if (mc == Int.MAX_VALUE || mn == Int.MAX_VALUE) return null
-          mcc = mc
-          mnc = mn
-        }
+        val mcc = readMcc(identity) ?: return null
+        val mnc = readMnc(identity) ?: return null
         val lac = identity.lac
         if (lac == Int.MAX_VALUE || lac < 0) return null
         val cid = identity.cid
@@ -285,20 +261,8 @@ class VerityRadioEnvironmentModule(private val reactContext: ReactApplicationCon
       }
       is CellInfoGsm -> {
         val identity = ci.cellIdentity as? CellIdentityGsm ?: return null
-        val mcc: Int
-        val mnc: Int
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-          mcc = identity.mccString?.toIntOrNull() ?: return null
-          mnc = identity.mncString?.toIntOrNull() ?: return null
-        } else {
-          @Suppress("DEPRECATION")
-          val mc = identity.mcc
-          @Suppress("DEPRECATION")
-          val mn = identity.mnc
-          if (mc == Int.MAX_VALUE || mn == Int.MAX_VALUE) return null
-          mcc = mc
-          mnc = mn
-        }
+        val mcc = readMcc(identity) ?: return null
+        val mnc = readMnc(identity) ?: return null
         val lac = identity.lac
         if (lac == Int.MAX_VALUE || lac < 0) return null
         val cid = identity.cid
@@ -313,11 +277,11 @@ class VerityRadioEnvironmentModule(private val reactContext: ReactApplicationCon
       is CellInfoNr -> {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
         val identity = ci.cellIdentity as? CellIdentityNr ?: return null
-        val mcc = identity.mccString?.toIntOrNull() ?: return null
-        val mnc = identity.mncString?.toIntOrNull() ?: return null
-        val tac = identity.tac
+        val mcc = readMcc(identity) ?: return null
+        val mnc = readMnc(identity) ?: return null
+        val tac = readIntMethod(identity, "getTac") ?: return null
         if (tac == Int.MAX_VALUE || tac < 0) return null
-        val nci = identity.nci
+        val nci = readLongMethod(identity, "getNci") ?: return null
         if (nci == CellInfo.UNAVAILABLE_LONG) return null
         m.putString("radioType", "nr")
         m.putInt("mobileCountryCode", mcc)
@@ -475,17 +439,30 @@ class VerityRadioEnvironmentModule(private val reactContext: ReactApplicationCon
     w.putDouble("pseudorangeRateMetersPerSecond", m.pseudorangeRateMetersPerSecond.toDouble())
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      // compileSdk 35+ 스텁: has* 대신 getter (런타임은 API 26+에서 동일 필드)
-      w.putDouble("receivedSvTimeUncertaintyNanos", m.receivedSvTimeUncertaintyNanos.toDouble())
-      w.putDouble(
-        "pseudorangeRateUncertaintyMetersPerSecond",
-        m.pseudorangeRateUncertaintyMetersPerSecond.toDouble()
+      putNullableDouble(
+        w,
+        "receivedSvTimeUncertaintyNanos",
+        readDoubleMethod(m, "getReceivedSvTimeUncertaintyNanos")
       )
-      w.putInt("accumulatedDeltaRangeState", m.accumulatedDeltaRangeState)
-      w.putDouble("accumulatedDeltaRangeMeters", m.accumulatedDeltaRangeMeters.toDouble())
-      w.putDouble(
+      putNullableDouble(
+        w,
+        "pseudorangeRateUncertaintyMetersPerSecond",
+        readDoubleMethod(m, "getPseudorangeRateUncertaintyMetersPerSecond")
+      )
+      putNullableInt(
+        w,
+        "accumulatedDeltaRangeState",
+        readIntMethod(m, "getAccumulatedDeltaRangeState")
+      )
+      putNullableDouble(
+        w,
+        "accumulatedDeltaRangeMeters",
+        readDoubleMethod(m, "getAccumulatedDeltaRangeMeters")
+      )
+      putNullableDouble(
+        w,
         "accumulatedDeltaRangeUncertaintyMeters",
-        m.accumulatedDeltaRangeUncertaintyMeters.toDouble()
+        readDoubleMethod(m, "getAccumulatedDeltaRangeUncertaintyMeters")
       )
       if (m.hasCarrierFrequencyHz()) w.putDouble("carrierFrequencyHz", m.carrierFrequencyHz.toDouble())
       else w.putNull("carrierFrequencyHz")
@@ -519,5 +496,65 @@ class VerityRadioEnvironmentModule(private val reactContext: ReactApplicationCon
     }
 
     return w
+  }
+
+  private fun readMcc(identity: Any): Int? {
+    return readPlmnPart(identity, "getMccString", "getMcc")
+  }
+
+  private fun readMnc(identity: Any): Int? {
+    return readPlmnPart(identity, "getMncString", "getMnc")
+  }
+
+  private fun readPlmnPart(identity: Any, stringGetter: String, intGetter: String): Int? {
+    val fromString = readStringMethod(identity, stringGetter)?.toIntOrNull()
+    if (fromString != null && fromString >= 0) return fromString
+    val fromInt = readIntMethod(identity, intGetter)
+    if (fromInt == null || fromInt < 0 || fromInt == Int.MAX_VALUE) return null
+    return fromInt
+  }
+
+  private fun readStringMethod(target: Any, name: String): String? {
+    return try {
+      val value = target.javaClass.getMethod(name).invoke(target)
+      value as? String
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun readIntMethod(target: Any, name: String): Int? {
+    return try {
+      val value = target.javaClass.getMethod(name).invoke(target)
+      (value as? Number)?.toInt()
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun readLongMethod(target: Any, name: String): Long? {
+    return try {
+      val value = target.javaClass.getMethod(name).invoke(target)
+      (value as? Number)?.toLong()
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun readDoubleMethod(target: Any, name: String): Double? {
+    return try {
+      val value = target.javaClass.getMethod(name).invoke(target)
+      (value as? Number)?.toDouble()
+    } catch (_: Exception) {
+      null
+    }
+  }
+
+  private fun putNullableInt(map: WritableMap, key: String, value: Int?) {
+    if (value == null) map.putNull(key) else map.putInt(key, value)
+  }
+
+  private fun putNullableDouble(map: WritableMap, key: String, value: Double?) {
+    if (value == null) map.putNull(key) else map.putDouble(key, value)
   }
 }

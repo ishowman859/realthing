@@ -105,16 +105,16 @@ npx serve .
 
 정적 페이지는 API 주소를 스스로 모르므로, 다음 중 하나로 **베이스 URL**을 지정합니다.
 
-1. URL 쿼리: **`?api=https://api.example.com`** (GitHub Pages / 커스텀 도메인에서 필수에 가깝습니다)  
-2. **`window.__VERITY_API_BASE__`** (임베드 시)  
-3. 로컬 호스트에서는 기본값으로 `http://localhost:4000`  
-4. 같은 사이트 **`/api`** 프록시를 쓰는 호스팅(Vercel 등)은 상대 경로 `/api`
+1. **GitHub Actions 변수 `VERITY_PAGES_API`** — Pages 배포 시 `index.html` / `admin.html` 메타에 주입 ([`WEB.md`](WEB.md) 체크리스트). HTTPS URL만 사용.  
+2. URL 쿼리: **`?api=https://api.example.com`** (변수 없이 배포했을 때·임시 테스트용)  
+3. **`window.__VERITY_API_BASE__`** (임베드 시)  
+4. 로컬 호스트에서는 기본값으로 `http://localhost:4000`  
+5. 같은 사이트 **`/api`** 프록시를 쓰는 호스팅(Vercel 등)은 상대 경로 `/api`
 
 대표 엔드포인트:
 
-- `GET /v1/verify/:token` — 검증 JSON (`merkleProof`, `merkleRoot`, `assetId` 등)  
+- `GET /v1/verify/:token` — 검증 JSON (`merkleProof`, `merkleRoot`, `assetId` 등). **머클 경로 시각화**도 이 응답을 사용합니다.  
 - `POST /v1/verify/:token/recheck`  
-- `POST /v1/verify/upload` — 웹에서 파일 업로드 등록  
 
 토큰 기반 URL: **`/v/{token}`** 또는 **`?id={token}`** (Pages에서는 `404.html`이 `index.html`과 동일 복사본으로 SPA식 동작).
 

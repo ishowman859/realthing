@@ -1,0 +1,4 @@
+# 사용 전: api.example.com → 본인 도메인으로 바꾸고, DNS A 레코드가 서버를 가리키게 하세요.
+api.veritychains.com {
+	reverse_proxy 127.0.0.1:4000
+}

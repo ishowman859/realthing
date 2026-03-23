@@ -15,6 +15,7 @@ interface HomeScreenProps {
   ownerAddress: string;
   onNavigateCamera: () => void;
   onNavigateHistory: () => void;
+  onNavigateVerify: () => void;
 }
 
 const cardShadow =
@@ -31,9 +32,11 @@ export default function HomeScreen({
   ownerAddress,
   onNavigateCamera,
   onNavigateHistory,
+  onNavigateVerify,
 }: HomeScreenProps) {
   const owner = ownerAddress.trim();
   const ownerReady = owner.length > 0;
+  const usingFallbackOwner = owner === "demo-owner";
   const ownerShort =
     owner.length > 14 ? `${owner.slice(0, 8)}…${owner.slice(-6)}` : owner;
 
@@ -61,8 +64,9 @@ export default function HomeScreen({
               </View>
             </View>
             <Text style={styles.ownerHint}>
-              지갑 연동은 메인 서버에서 처리합니다. 빌드 설정의
-              verityOwnerAddress를 서버와 맞춰 주세요.
+              {usingFallbackOwner
+                ? "현재는 기본 demo-owner로 동작 중입니다. 실제 서버 owner와 맞추려면 app.json 또는 EXPO_PUBLIC_VERITY_OWNER_ADDRESS를 설정하세요."
+                : "지갑 연동은 메인 서버에서 처리합니다. 빌드 설정의 verityOwnerAddress를 서버와 맞춰 주세요."}
             </Text>
           </View>
         ) : (
@@ -151,6 +155,23 @@ export default function HomeScreen({
             size={20}
             color={ownerReady ? ui.textMuted : ui.border}
           />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.actionCard, cardShadow]}
+          onPress={onNavigateVerify}
+          activeOpacity={0.85}
+        >
+          <View style={[styles.actionIconCircle, styles.actionIconCircleVerify]}>
+            <Ionicons name="shield-checkmark-outline" size={26} color={ui.primary} />
+          </View>
+          <View style={styles.actionTextBlock}>
+            <Text style={styles.actionTitle}>검증 조회</Text>
+            <Text style={styles.actionDesc}>
+              토큰으로 머클·해시 결과 조회 (소유자 설정 불필요)
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color={ui.textMuted} />
         </TouchableOpacity>
       </View>
 
@@ -272,6 +293,9 @@ const styles = StyleSheet.create({
   },
   actionIconCircleAlt: {
     backgroundColor: ui.successSoft,
+  },
+  actionIconCircleVerify: {
+    backgroundColor: ui.primarySoft,
   },
   actionTextBlock: {
     flex: 1,

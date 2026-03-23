@@ -4,11 +4,12 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import HomeScreen from "./src/screens/HomeScreen";
 import CameraScreen from "./src/screens/CameraScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
+import VerifyScreen from "./src/screens/VerifyScreen";
 import { useVerityHash } from "./src/hooks/useVerityHash";
 import { AppErrorBoundary } from "./src/AppErrorBoundary";
 import { resolveVerityOwnerAddress } from "./src/utils/verityOwner";
 
-type Screen = "home" | "camera" | "history";
+type Screen = "home" | "camera" | "history" | "verify";
 
 export default function App() {
   return (
@@ -62,12 +63,21 @@ function AppInner() {
         />
       );
 
+    case "verify":
+      return (
+        <VerifyScreen
+          initialToken=""
+          onBack={() => setCurrentScreen("home")}
+        />
+      );
+
     default:
       return (
         <HomeScreen
           ownerAddress={ownerAddress}
           onNavigateCamera={handleNavigateCamera}
           onNavigateHistory={() => setCurrentScreen("history")}
+          onNavigateVerify={() => setCurrentScreen("verify")}
         />
       );
   }

@@ -52,7 +52,8 @@ const I18N = {
     htmlTitle: "Verity 검증 페이지",
     verificationEyebrow: "검증",
     pageTitle: "Verity 검증 페이지",
-    pageSub: "QR 또는 공유 URL로 접속한 자산의 원본성/유사성 검증 결과를 표시합니다.",
+    pageSub:
+      "검증 토큰으로 등록 기록·머클 경로를 조회합니다. 해시 등록·지갑·배치 봉인은 백엔드에서 처리됩니다.",
     serialLabel: "일련번호",
     modeLabel: "모드",
     createdAtLabel: "생성 시각",
@@ -75,7 +76,17 @@ const I18N = {
     highSimilarity: "유사 이미지 높음 ({score}%)",
     warnSimilarity: "유사 이미지 주의 ({score}%)",
     lowSimilarity: "유사성 위험 낮음",
-    noToken: "공유 링크가 없거나 잘못되었습니다. 파일을 업로드하거나 올바른 링크로 접속하세요.",
+    noToken:
+      "유효한 토큰이 없습니다. 아래에 토큰을 입력하거나 QR·공유 링크로 접속하세요.",
+    tokenOrUrlHint:
+      "검증 토큰을 입력한 뒤 「조회」를 누르거나 /v/토큰 링크로 접속하세요.",
+    tokenSectionLabel: "검증 토큰 조회",
+    tokenHelp:
+      "미디어 해시 등록과 머클 배치는 서버·앱 API에서 처리됩니다. 이 페이지는 공개 토큰으로 기록만 조회·검증합니다.",
+    tokenPlaceholder: "검증 토큰 붙여넣기",
+    tokenLookupButton: "조회",
+    tokenLookupWorking: "조회 중…",
+    tokenLookupNeedToken: "검증 토큰을 입력하세요.",
     recheckError: "재검증 요청 중 오류",
     loadFail: "조회 실패",
     githubPagesNeedApi:
@@ -121,7 +132,7 @@ const I18N = {
     merkleCompareFail: "로컬 파일 내용이 서버에 등록된 시점의 바이트와 다릅니다.",
     merkleCompareWrongMode: "pHash 모드에서는 파일 SHA-256 대조를 쓰지 않습니다.",
     merkleNoFile: "파일을 먼저 선택하세요.",
-    merkleNoDataYet: "파일을 업로드하거나 공유 링크로 조회하면 이웃 해시(머클 경로)가 여기 표시됩니다.",
+    merkleNoDataYet: "토큰으로 조회하면 이웃 해시(머클 경로)가 여기 표시됩니다.",
     merkleChainTitle: "머클 트리 · 배치 머클 루트 (Solana 연동 MVP)",
     labelIndexedBlock: "인덱스 블록(분 단위 배치)",
     labelStoredRoot: "봉인된 머클 루트",
@@ -129,12 +140,31 @@ const I18N = {
     labelChainTx: "배치 트랜잭션/서명",
     merkleChainNote:
       "자산은 분(minute) 단위 배치로 묶여 머클 트리가 만들어지고, 위 루트·아래 이웃 해시(경로)로 온체인 인덱스와 대조합니다. 실제 Solana 메인넷 앵커는 운영 환경에 맞게 확장하면 됩니다.",
+    merkleVizTitle: "머클 경로 시각화 (루트 → 리프)",
+    merkleVizComputing: "경로 해시 계산 중…",
+    merkleVizMatchOk: "재계산 루트가 공개 루트와 일치합니다.",
+    merkleVizMatchBad: "재계산 루트가 공개 루트와 다릅니다.",
+    merkleVizStepMerge: "이웃 해시와 병합",
+    merkleVizChildBelow: "병합 전 하위 해시",
+    merkleVizFormulaLeft: "H(이웃 ‖ 하위)",
+    merkleVizFormulaRight: "H(하위 ‖ 이웃)",
+    merkleVizNoLeaf: "리프 해시가 없어 경로를 그릴 수 없습니다.",
   },
   en: {
     htmlTitle: "Verity Verification",
     verificationEyebrow: "Verification",
     pageTitle: "Verity Verification",
-    pageSub: "Displays authenticity/similarity verification results for assets opened via QR or shared URL.",
+    pageSub:
+      "Look up records and Merkle path by verification token. Hash ingest, wallet, and batch sealing run on the backend.",
+    tokenOrUrlHint:
+      "Enter a token and press Look up, or open a /v/{token} link.",
+    tokenSectionLabel: "Verification token",
+    tokenHelp:
+      "Hash registration and Merkle batching use server/app APIs. This page only loads public records by token.",
+    tokenPlaceholder: "Paste verification token",
+    tokenLookupButton: "Look up",
+    tokenLookupWorking: "Loading…",
+    tokenLookupNeedToken: "Enter a verification token.",
     serialLabel: "Serial",
     modeLabel: "Mode",
     createdAtLabel: "Created At",
@@ -157,7 +187,7 @@ const I18N = {
     highSimilarity: "High image similarity ({score}%)",
     warnSimilarity: "Caution: similar image ({score}%)",
     lowSimilarity: "Low similarity risk",
-    noToken: "No valid share link. Upload a file or open the correct link.",
+    noToken: "No token in the URL. Paste a token below or open a QR/share link.",
     recheckError: "Error while requesting recheck",
     loadFail: "Failed to load",
     githubPagesNeedApi:
@@ -202,7 +232,7 @@ const I18N = {
     merkleCompareFail: "Local file bytes differ from what was registered.",
     merkleCompareWrongMode: "File SHA-256 compare is for SHA-256 mode only.",
     merkleNoFile: "Choose a file first.",
-    merkleNoDataYet: "Upload a file or open a shared link to load the sibling hashes (Merkle path) here.",
+    merkleNoDataYet: "Look up by token to load sibling hashes (Merkle path) here.",
     merkleChainTitle: "Merkle tree · batch root (Solana MVP)",
     labelIndexedBlock: "Indexed block (minute batch)",
     labelStoredRoot: "Sealed Merkle root",
@@ -210,12 +240,31 @@ const I18N = {
     labelChainTx: "Batch tx / signature",
     merkleChainNote:
       "Assets are batched per minute; the root above and the sibling hashes below form the Merkle path checked against the indexed batch. Wire real Solana anchoring for your network.",
+    merkleVizTitle: "Merkle path (root → leaf)",
+    merkleVizComputing: "Computing path hashes…",
+    merkleVizMatchOk: "Recomputed root matches the published Merkle root.",
+    merkleVizMatchBad: "Recomputed root does not match the published Merkle root.",
+    merkleVizStepMerge: "Merge with sibling",
+    merkleVizChildBelow: "Child hash before merge",
+    merkleVizFormulaLeft: "H(sibling ‖ child)",
+    merkleVizFormulaRight: "H(child ‖ sibling)",
+    merkleVizNoLeaf: "No leaf hash; cannot draw the path.",
   },
   ja: {
     htmlTitle: "Verity 検証ページ",
     verificationEyebrow: "検証",
     pageTitle: "Verity 検証ページ",
-    pageSub: "QR または共有 URL で開いたアセットの真正性/類似性の検証結果を表示します。",
+    pageSub:
+      "検証トークンで登録記録・マークルパスを照会します。ハッシュ登録・ウォレットはバックエンドで処理されます。",
+    tokenOrUrlHint:
+      "トークンを入力して「照会」を押すか、/v/トークン のリンクで開いてください。",
+    tokenSectionLabel: "検証トークン照会",
+    tokenHelp:
+      "ハッシュ登録とマークルバッチはサーバー/APIで行います。このページは公開トークンで記録のみ表示します。",
+    tokenPlaceholder: "検証トークンを貼り付け",
+    tokenLookupButton: "照会",
+    tokenLookupWorking: "読み込み中…",
+    tokenLookupNeedToken: "検証トークンを入力してください。",
     serialLabel: "シリアル番号",
     modeLabel: "モード",
     createdAtLabel: "作成時刻",
@@ -238,7 +287,8 @@ const I18N = {
     highSimilarity: "画像の類似度が高い ({score}%)",
     warnSimilarity: "画像の類似に注意 ({score}%)",
     lowSimilarity: "類似リスクが低い",
-    noToken: "共有リンクがないか無効です。ファイルをアップロードするか正しいリンクを開いてください。",
+    noToken:
+      "URL にトークンがありません。下に貼り付けるか QR/共有リンクで開いてください。",
     recheckError: "再検証リクエスト中にエラー",
     loadFail: "取得失敗",
     githubPagesNeedApi:
@@ -279,7 +329,7 @@ const I18N = {
     merkleCompareFail: "ローカルファイルが登録時のバイト列と異なります。",
     merkleCompareWrongMode: "pHash モードではファイル SHA-256 照合はありません。",
     merkleNoFile: "先にファイルを選んでください。",
-    merkleNoDataYet: "ファイルをアップロードするか共有リンクで開くと、隣接ハッシュ（マークルパス）が表示されます。",
+    merkleNoDataYet: "トークンで照会すると隣接ハッシュ（マークルパス）が表示されます。",
     merkleChainTitle: "マークルツリー・バッチルート（Solana MVP）",
     labelIndexedBlock: "インデックスブロック（分単位バッチ）",
     labelStoredRoot: "封切られたマークルルート",
@@ -287,12 +337,28 @@ const I18N = {
     labelChainTx: "バッチ Tx / 署名",
     merkleChainNote:
       "アセットは分単位バッチでまとめられ、上記ルートと下の隣接ハッシュでインデックスと照合します。本番 Solana アンカーは環境に合わせて接続してください。",
+    merkleVizTitle: "マークルパス可視化（ルート→リーフ）",
+    merkleVizComputing: "パスを計算中…",
+    merkleVizMatchOk: "再計算ルートが公開ルートと一致しました。",
+    merkleVizMatchBad: "再計算ルートが公開ルートと一致しません。",
+    merkleVizStepMerge: "隣接ハッシュとマージ",
+    merkleVizChildBelow: "マージ前の下位ハッシュ",
+    merkleVizFormulaLeft: "H(隣接 ‖ 子)",
+    merkleVizFormulaRight: "H(子 ‖ 隣接)",
+    merkleVizNoLeaf: "リーフがありません。",
   },
   zh: {
     htmlTitle: "Verity 验证页面",
     verificationEyebrow: "验证",
     pageTitle: "Verity 验证页面",
-    pageSub: "显示通过二维码或分享链接访问的资产真伪/相似性验证结果。",
+    pageSub: "通过验证令牌查询登记记录与默克尔路径。哈希登记与钱包在后台处理。",
+    tokenOrUrlHint: "输入令牌后点「查询」，或使用 /v/令牌 链接打开。",
+    tokenSectionLabel: "验证令牌查询",
+    tokenHelp: "哈希登记与默克尔批次由服务器/应用 API 完成；本页仅按公开令牌查询记录。",
+    tokenPlaceholder: "粘贴验证令牌",
+    tokenLookupButton: "查询",
+    tokenLookupWorking: "加载中…",
+    tokenLookupNeedToken: "请输入验证令牌。",
     serialLabel: "序列号",
     modeLabel: "模式",
     createdAtLabel: "创建时间",
@@ -315,7 +381,7 @@ const I18N = {
     highSimilarity: "图像相似度高 ({score}%)",
     warnSimilarity: "注意：图像相似 ({score}%)",
     lowSimilarity: "相似风险较低",
-    noToken: "没有有效的分享链接。请上传文件或使用正确链接打开。",
+    noToken: "链接中没有令牌。请在下方粘贴或使用二维码/分享链接打开。",
     recheckError: "请求重新验证时出错",
     loadFail: "加载失败",
     githubPagesNeedApi:
@@ -355,7 +421,7 @@ const I18N = {
     merkleCompareFail: "本地文件与登记时的字节不一致。",
     merkleCompareWrongMode: "仅 SHA-256 模式支持文件 SHA-256 对照。",
     merkleNoFile: "请先选择文件。",
-    merkleNoDataYet: "上传文件或通过分享链接查询后，将在此显示邻接哈希（默克尔路径）。",
+    merkleNoDataYet: "用令牌查询后，将在此显示邻接哈希（默克尔路径）。",
     merkleChainTitle: "默克尔树 · 批次根（Solana MVP）",
     labelIndexedBlock: "索引区块（按分钟批次）",
     labelStoredRoot: "已封存的默克尔根",
@@ -363,6 +429,15 @@ const I18N = {
     labelChainTx: "批次交易 / 签名",
     merkleChainNote:
       "资产按分钟批次聚合成默克尔树；用上述根与下方邻接哈希路径与索引对照。可按环境接入真实 Solana 上链。",
+    merkleVizTitle: "默克尔路径可视化（根 → 叶）",
+    merkleVizComputing: "正在计算路径哈希…",
+    merkleVizMatchOk: "重算根与公开默克尔根一致。",
+    merkleVizMatchBad: "重算根与公开默克尔根不一致。",
+    merkleVizStepMerge: "与邻接哈希合并",
+    merkleVizChildBelow: "合并前的子哈希",
+    merkleVizFormulaLeft: "H(邻接 ‖ 子)",
+    merkleVizFormulaRight: "H(子 ‖ 邻接)",
+    merkleVizNoLeaf: "无叶子哈希，无法绘制路径。",
   },
 };
 
@@ -421,6 +496,116 @@ async function verifyMerkleProofClient(leafHash, proof, expectedRoot) {
   return current === expectedRoot;
 }
 
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function escapeAttr(s) {
+  return escapeHtml(s).replace(/'/g, "&#39;");
+}
+
+function shortHashHex(hex, pre = 7, post = 5) {
+  const h = String(hex || "");
+  if (h.length <= pre + post + 1) return h;
+  return `${h.slice(0, pre)}…${h.slice(-post)}`;
+}
+
+async function buildMerklePathLevels(leafHash, proof) {
+  const levels = [{ hash: leafHash, sibling: null, position: null, childHash: null }];
+  if (!leafHash || !Array.isArray(proof) || proof.length === 0) {
+    return { levels, computedRoot: leafHash || "" };
+  }
+  let acc = leafHash;
+  for (const node of proof) {
+    const sib = String(node?.hash || "");
+    const pos = String(node?.position || "");
+    if (!sib || (pos !== "left" && pos !== "right")) {
+      return { levels, computedRoot: acc, badProof: true };
+    }
+    const child = acc;
+    const pair = pos === "left" ? `${sib}${child}` : `${child}${sib}`;
+    acc = await sha256HexUtf8(pair);
+    levels.push({ hash: acc, sibling: sib, position: pos, childHash: child });
+  }
+  return { levels, computedRoot: acc };
+}
+
+async function resolveLeafHashForMerkleViz(data) {
+  if (data.merkleLeafHash) return String(data.merkleLeafHash);
+  if (data.assetId && window.crypto?.subtle) {
+    return createClientLeafHash(data);
+  }
+  return "";
+}
+
+async function paintMerkleTreeViz(data, proof) {
+  const container = el.merkleTreeViz;
+  if (!container) return;
+
+  if (!window.isSecureContext || !window.crypto?.subtle) {
+    container.hidden = false;
+    container.innerHTML = `<p class="merkle-viz__loading">${escapeHtml(t("merkleVerifyNeedCrypto"))}</p>`;
+    return;
+  }
+
+  container.hidden = false;
+  container.innerHTML = `<p class="merkle-viz__loading">${escapeHtml(t("merkleVizComputing"))}</p>`;
+
+  const leafHash = await resolveLeafHashForMerkleViz(data);
+  if (!leafHash) {
+    container.innerHTML = `<p class="merkle-viz__loading">${escapeHtml(t("merkleVizNoLeaf"))}</p>`;
+    return;
+  }
+
+  const { levels, computedRoot, badProof } = await buildMerklePathLevels(leafHash, proof);
+  if (badProof) {
+    container.innerHTML = `<p class="merkle-viz__loading">${escapeHtml(t("merkleVerifyFail"))}</p>`;
+    return;
+  }
+
+  const serverRoot = String(data.merkleRoot || "");
+  const match = !!(serverRoot && computedRoot === serverRoot);
+  const topDown = levels.slice().reverse();
+
+  const parts = [];
+  parts.push(`<div class="merkle-viz__title">${escapeHtml(t("merkleVizTitle"))}</div>`);
+  if (serverRoot) {
+    parts.push(
+      `<div class="merkle-viz__match ${match ? "merkle-viz__match--ok" : "merkle-viz__match--bad"}">${escapeHtml(match ? t("merkleVizMatchOk") : t("merkleVizMatchBad"))}</div>`
+    );
+  }
+
+  parts.push(
+    `<div class="merkle-viz__row"><div class="merkle-viz__node merkle-viz__node--root"><span class="merkle-viz__badge">ROOT</span><code class="merkle-viz__hash" title="${escapeAttr(serverRoot)}">${escapeHtml(serverRoot)}</code></div></div>`
+  );
+
+  for (let k = 0; k < topDown.length - 1; k++) {
+    const upper = topDown[k];
+    const lower = topDown[k + 1];
+    const isLast = k === topDown.length - 2;
+    const formula =
+      upper.position === "left" ? t("merkleVizFormulaLeft") : t("merkleVizFormulaRight");
+
+    parts.push(`<div class="merkle-viz__connector" aria-hidden="true">↓</div>`);
+    parts.push(`<div class="merkle-viz__step">
+      <span class="merkle-viz__step-label">${escapeHtml(t("merkleVizStepMerge"))} · ${escapeHtml(formula)}</span>
+      <div class="merkle-viz__sibling" title="${escapeAttr(upper.sibling)}">${escapeHtml(upper.sibling)}</div>
+      <span class="merkle-viz__pos">${escapeHtml(String(upper.position || "").toUpperCase())}</span>
+      <div class="merkle-viz__child-hint">${escapeHtml(t("merkleVizChildBelow"))}: ${escapeHtml(shortHashHex(upper.childHash))}</div>
+    </div>`);
+
+    parts.push(
+      `<div class="merkle-viz__row"><div class="merkle-viz__node${isLast ? " merkle-viz__node--leaf" : ""}"><span class="merkle-viz__badge">${isLast ? "LEAF" : String(k + 1)}</span><code class="merkle-viz__hash" title="${escapeAttr(lower.hash)}">${escapeHtml(lower.hash)}</code></div></div>`
+    );
+  }
+
+  container.innerHTML = parts.join("");
+}
+
 function setMerkleIntroParagraph(elP, text) {
   if (!elP) return;
   elP.textContent = "";
@@ -454,7 +639,6 @@ function t(key, vars = {}) {
 }
 
 let sessionToken = "";
-let lastPreviewUrl = null;
 
 /** 버튼 연타·서버 1초 가드와 맞춤: 동작 종료 후에도 최소 1초 간격 */
 const BTN_COOLDOWN_MS = 1000;
@@ -468,56 +652,14 @@ function scheduleReenableButton(button, startedAt) {
   }, wait);
 }
 
-/** Solana pubkey 바이트열 → Base58 (지갑이 Uint8Array만 줄 때 대비) */
-function uint8ToBase58(bytes) {
-  const ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
-  const buf = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  if (!buf.length) return "";
-  let n = 0n;
-  for (let i = 0; i < buf.length; i++) n = n * 256n + BigInt(buf[i]);
-  const digits = [];
-  while (n > 0n) {
-    digits.push(ALPHABET[Number(n % 58n)]);
-    n = n / 58n;
-  }
-  for (let i = 0; i < buf.length && buf[i] === 0; i++) digits.push(ALPHABET[0]);
-  return digits.length ? digits.reverse().join("") : ALPHABET[0];
-}
-
-function ownerStringFromPublicKey(pk) {
-  if (!pk) return "";
-  if (typeof pk.toBase58 === "function") return pk.toBase58();
-  if (pk instanceof Uint8Array) return uint8ToBase58(pk);
-  if (Array.isArray(pk) && pk.length) return uint8ToBase58(new Uint8Array(pk));
-  if (typeof pk.toString === "function") {
-    const s = pk.toString();
-    if (s && !s.startsWith("[object")) return s;
-  }
-  return "";
-}
-
-/** Backpack이 주입하는 Solana provider (Phantom 등과 구분) */
-function getBackpackSolanaProvider() {
-  const w = window;
-  if (w.backpack && typeof w.backpack.connect === "function") return w.backpack;
-  const sol = w.solana;
-  if (sol && sol.isBackpack === true && typeof sol.connect === "function") return sol;
-  if (w.backpack?.solana && typeof w.backpack.solana.connect === "function")
-    return w.backpack.solana;
-  return null;
-}
-
 const el = {
   titleText: document.getElementById("titleText"),
   subText: document.getElementById("subText"),
-  labelUpload: document.getElementById("labelUpload"),
-  uploadHelp: document.getElementById("uploadHelp"),
-  uploadButton: document.getElementById("uploadButton"),
-  uploadStatus: document.getElementById("uploadStatus"),
-  fileInput: document.getElementById("fileInput"),
-  ownerInput: document.getElementById("ownerInput"),
-  backpackConnectBtn: document.getElementById("backpackConnectBtn"),
-  backpackDisconnectBtn: document.getElementById("backpackDisconnectBtn"),
+  labelLookup: document.getElementById("labelLookup"),
+  lookupHelp: document.getElementById("lookupHelp"),
+  tokenInput: document.getElementById("tokenInput"),
+  tokenLookupBtn: document.getElementById("tokenLookupBtn"),
+  tokenLookupStatus: document.getElementById("tokenLookupStatus"),
   labelSerial: document.getElementById("labelSerial"),
   labelMode: document.getElementById("labelMode"),
   labelCreatedAt: document.getElementById("labelCreatedAt"),
@@ -573,61 +715,8 @@ const el = {
   labelChainTx: document.getElementById("labelChainTx"),
   chainTxVal: document.getElementById("chainTxVal"),
   merkleChainNote: document.getElementById("merkleChainNote"),
+  merkleTreeViz: document.getElementById("merkleTreeViz"),
 };
-
-let backpackProviderRef = null;
-
-function updateBackpackUi(connected) {
-  if (el.backpackConnectBtn) el.backpackConnectBtn.hidden = !!connected;
-  if (el.backpackDisconnectBtn) el.backpackDisconnectBtn.hidden = !connected;
-}
-
-function bindBackpackWallet() {
-  const connectBtn = el.backpackConnectBtn;
-  const disconnectBtn = el.backpackDisconnectBtn;
-  if (!connectBtn || !disconnectBtn) return;
-
-  updateBackpackUi(false);
-
-  connectBtn.addEventListener("click", async () => {
-    if (connectBtn.disabled) return;
-    const provider = getBackpackSolanaProvider();
-    if (!provider) {
-      alert(t("backpackMissing"));
-      return;
-    }
-    try {
-      const result = await provider.connect();
-      const pk = result?.publicKey ?? provider.publicKey;
-      const owner = ownerStringFromPublicKey(pk);
-      if (!owner) throw new Error("empty pubkey");
-      if (el.ownerInput) el.ownerInput.value = owner;
-      backpackProviderRef = provider;
-      updateBackpackUi(true);
-      if (el.uploadStatus) {
-        el.uploadStatus.style.display = "block";
-        el.uploadStatus.textContent = t("backpackOwnerFilled");
-      }
-    } catch (err) {
-      alert(`${t("backpackConnectFail")}: ${err?.message || err}`);
-    }
-  });
-
-  disconnectBtn.addEventListener("click", async () => {
-    if (disconnectBtn.disabled) return;
-    const provider = backpackProviderRef || getBackpackSolanaProvider();
-    try {
-      if (provider && typeof provider.disconnect === "function") {
-        await provider.disconnect();
-      }
-    } catch (_) {
-      /* ignore */
-    }
-    backpackProviderRef = null;
-    if (el.ownerInput) el.ownerInput.value = "";
-    updateBackpackUi(false);
-  });
-}
 
 let lastVerificationPayload = null;
 
@@ -671,12 +760,10 @@ function applyStaticI18n() {
   setText(el.recheckButton, t("recheckButton"));
   setText(el.assetEmpty, t("noImage"));
   el.assetImage.alt = t("assetAlt");
-  if (el.labelUpload) setText(el.labelUpload, t("uploadSectionLabel"));
-  if (el.uploadHelp) el.uploadHelp.textContent = t("uploadHelp");
-  if (el.uploadButton) setText(el.uploadButton, t("uploadButtonLabel"));
-  if (el.ownerInput) el.ownerInput.placeholder = t("ownerOptionalPlaceholder");
-  if (el.backpackConnectBtn) setText(el.backpackConnectBtn, t("backpackConnect"));
-  if (el.backpackDisconnectBtn) setText(el.backpackDisconnectBtn, t("backpackDisconnect"));
+  if (el.labelLookup) setText(el.labelLookup, t("tokenSectionLabel"));
+  if (el.lookupHelp) el.lookupHelp.textContent = t("tokenHelp");
+  if (el.tokenInput) el.tokenInput.placeholder = t("tokenPlaceholder");
+  if (el.tokenLookupBtn) setText(el.tokenLookupBtn, t("tokenLookupButton"));
   setStatus("warn", t("loading"));
   if (el.labelMerkleSection) setText(el.labelMerkleSection, t("merkleSectionLabel"));
   if (el.labelMerkleRoot) setText(el.labelMerkleRoot, t("labelMerkleRootPub"));
@@ -772,6 +859,10 @@ function renderMerkleStub() {
   }
   if (el.merkleActive) el.merkleActive.hidden = true;
   if (el.merkleVerifyBtn) el.merkleVerifyBtn.disabled = true;
+  if (el.merkleTreeViz) {
+    el.merkleTreeViz.innerHTML = "";
+    el.merkleTreeViz.hidden = true;
+  }
 }
 
 function renderMerkle(data) {
@@ -802,6 +893,10 @@ function renderMerkle(data) {
     }
     if (el.merkleActive) el.merkleActive.hidden = true;
     if (el.merkleVerifyBtn) el.merkleVerifyBtn.disabled = true;
+    if (el.merkleTreeViz) {
+      el.merkleTreeViz.innerHTML = "";
+      el.merkleTreeViz.hidden = true;
+    }
     return;
   }
 
@@ -826,6 +921,10 @@ function renderMerkle(data) {
 
   if (el.merkleLocalWrap) {
     el.merkleLocalWrap.style.display = data.mode === "sha256" ? "block" : "none";
+  }
+
+  if (el.merkleTreeViz) {
+    void paintMerkleTreeViz(data, proof);
   }
 }
 
@@ -942,15 +1041,7 @@ function render(data) {
   updateMonitorAlert(data);
 
   if (data.assetUrl) {
-    if (lastPreviewUrl) {
-      URL.revokeObjectURL(lastPreviewUrl);
-      lastPreviewUrl = null;
-    }
     el.assetImage.src = data.assetUrl;
-    el.assetImage.style.display = "block";
-    el.assetEmpty.style.display = "none";
-  } else if (lastPreviewUrl) {
-    el.assetImage.src = lastPreviewUrl;
     el.assetImage.style.display = "block";
     el.assetEmpty.style.display = "none";
   } else {
@@ -970,6 +1061,55 @@ function render(data) {
     else if (dup !== null && dup >= 85) setStatus("warn", t("warnSimilarity", { score: dup }));
     else setStatus("ok", t("lowSimilarity"));
   }
+}
+
+function bindTokenLookup() {
+  const btn = el.tokenLookupBtn;
+  const input = el.tokenInput;
+  const status = el.tokenLookupStatus;
+  if (!btn || !input) return;
+
+  const run = async () => {
+    if (!API_BASE) {
+      alert(__verityStaticPages ? t("githubPagesNeedApi") : t("loadFail"));
+      return;
+    }
+    const tok = (input.value || "").trim();
+    if (!tok) {
+      alert(t("tokenLookupNeedToken"));
+      return;
+    }
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const t0 = Date.now();
+    if (status) {
+      status.style.display = "block";
+      status.textContent = t("tokenLookupWorking");
+    }
+    try {
+      sessionToken = tok;
+      const data = await loadVerification(tok);
+      render(data);
+      if (status) {
+        status.textContent = "";
+        status.style.display = "none";
+      }
+    } catch (err) {
+      if (status) {
+        status.textContent = `${t("loadFail")}: ${err.message || err}`;
+        status.style.display = "block";
+      }
+      setStatus("bad", err.message || t("loadFail"));
+      renderMerkleStub();
+    } finally {
+      scheduleReenableButton(btn, t0);
+    }
+  };
+
+  btn.addEventListener("click", run);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") run();
+  });
 }
 
 function bindRecheck() {
@@ -993,75 +1133,12 @@ function bindRecheck() {
   });
 }
 
-function bindUpload() {
-  if (!el.uploadButton || !el.fileInput) return;
-  let inFlight = false;
-  const setUploadLocked = (locked) => {
-    el.uploadButton.disabled = locked;
-    el.fileInput.disabled = locked;
-    if (el.ownerInput) el.ownerInput.disabled = locked;
-    if (el.backpackConnectBtn) el.backpackConnectBtn.disabled = locked;
-    if (el.backpackDisconnectBtn) el.backpackDisconnectBtn.disabled = locked;
-  };
-
-  el.uploadButton.addEventListener("click", async () => {
-    if (inFlight || el.uploadButton.disabled) return;
-    const file = el.fileInput.files?.[0];
-    if (!file) {
-      alert(t("uploadNeedFile"));
-      return;
-    }
-    inFlight = true;
-    setUploadLocked(true);
-    const t0 = Date.now();
-
-    if (lastPreviewUrl) {
-      URL.revokeObjectURL(lastPreviewUrl);
-      lastPreviewUrl = null;
-    }
-    if (file.type.startsWith("image/")) {
-      lastPreviewUrl = URL.createObjectURL(file);
-    }
-
-    const fd = new FormData();
-    fd.append("file", file);
-    const owner = el.ownerInput?.value?.trim();
-    if (owner) fd.append("owner", owner);
-
-    el.uploadStatus.style.display = "block";
-    el.uploadStatus.textContent = t("uploadWorking");
-    try {
-      const res = await fetch(`${API_BASE}/v1/verify/upload`, { method: "POST", body: fd });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(body.message || res.statusText || String(res.status));
-      }
-      sessionToken = body.verification?.token || "";
-      render(body.verification);
-      el.uploadStatus.textContent = t("uploadOk");
-    } catch (err) {
-      el.uploadStatus.textContent = `${t("uploadFail")}: ${err.message || err}`;
-      if (lastPreviewUrl) {
-        URL.revokeObjectURL(lastPreviewUrl);
-        lastPreviewUrl = null;
-      }
-    } finally {
-      inFlight = false;
-      const elapsed = Date.now() - t0;
-      const wait = Math.max(0, BTN_COOLDOWN_MS - elapsed);
-      window.setTimeout(() => {
-        setUploadLocked(false);
-      }, wait);
-    }
-  });
-}
-
 async function main() {
   initBranding();
   applyStaticI18n();
   sessionToken = getTokenFromUrl();
-  bindUpload();
-  bindBackpackWallet();
+  if (el.tokenInput && sessionToken) el.tokenInput.value = sessionToken;
+  bindTokenLookup();
 
   if (!API_BASE) {
     setStatus("bad", __verityStaticPages ? t("githubPagesNeedApi") : t("loadFail"));
@@ -1083,7 +1160,7 @@ async function main() {
       renderMerkleStub();
     }
   } else {
-    setStatus("warn", t("uploadOrTokenHint"));
+    setStatus("warn", t("tokenOrUrlHint"));
     renderMerkleStub();
   }
 }

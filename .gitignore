@@ -6,6 +6,9 @@ node_modules/
 .env.local
 .env.*.local
 *.pem
+# Solana fee payer (never commit)
+*.solana-keypair.json
+solana-keypair.json
 
 # Logs & OS
 *.log

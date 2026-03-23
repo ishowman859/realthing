@@ -67,9 +67,6 @@ export interface AntiSpoofResult {
 
 const STORAGE_FILE = `${FileSystem.documentDirectory}verity-assets.json`;
 
-/** 검증 링크 베이스 (로컬 폴백). 서버 `VERIFY_BASE_URL` 과 맞출 것. */
-const VERIFY_BASE_URL = "http://98.84.127.220:4000/v";
-
 /**
  * 릴리스 APK에서 `Constants.expoConfig`가 비는 경우가 있어, extra가 없어도 항상 쓸 기본 API.
  * 로컬 개발: app.json extra / EXPO_PUBLIC_VERITY_API_URL / 에뮬레이터 localhost 치환.
@@ -77,6 +74,9 @@ const VERIFY_BASE_URL = "http://98.84.127.220:4000/v";
 const DEFAULT_VERITY_API_BASE = "http://98.84.127.220:4000";
 
 const API_BASE_URL = resolveApiBaseUrl();
+
+/** 검증 페이지는 API 호스트의 `/v/{token}` (서버가 index.html 제공). */
+const VERIFY_BASE_URL = `${API_BASE_URL.replace(/\/$/, "")}/v`;
 
 function readExtraApiUrl(): string {
   const fromExpo = Constants.expoConfig?.extra?.verityApiUrl;
@@ -323,4 +323,71 @@ function createSerial(mode: HashMode): string {
     .toString()
     .padStart(6, "0");
   return `VRT-${mode.toUpperCase()}-${yyyy}${mm}${dd}-${suffix}`;
+}
+
+/** 웹 `script.js` · 앱 검증 화면과 동일한 공개 조회 응답 */
+export interface MerkleProofNodeApi {
+  hash: string;
+  position: string;
+}
+
+export interface VerificationLookupPayload {
+  token: string;
+  assetId?: string;
+  serial?: string;
+  owner?: string;
+  mode?: string;
+  mediaType?: string;
+  sha256?: string;
+  phash?: string;
+  assetUrl?: string;
+  capturedTimestampMs?: number;
+  onchainTimestampMs?: number | null;
+  indexedBlockNumber?: number | null;
+  merkleLeafHash?: string | null;
+  merkleProof?: MerkleProofNodeApi[] | null;
+  merkleRoot?: string | null;
+  computedMerkleRoot?: string | null;
+  chainTxSignature?: string | null;
+  chainVerified?: boolean;
+  duplicateScore?: number | null;
+  aiRiskScore?: number | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export async function fetchVerificationByToken(
+  token: string
+): Promise<VerificationLookupPayload> {
+  const t = token.trim();
+  if (!t) throw new Error("토큰이 필요합니다.");
+  if (!API_BASE_URL) throw new Error("API URL이 설정되지 않았습니다.");
+  const res = await fetch(`${API_BASE_URL}/v1/verify/${encodeURIComponent(t)}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      (body as { message?: string }).message || `조회 실패 (${res.status})`;
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
+export async function recheckVerificationByToken(
+  token: string
+): Promise<VerificationLookupPayload> {
+  const t = token.trim();
+  if (!t) throw new Error("토큰이 필요합니다.");
+  if (!API_BASE_URL) throw new Error("API URL이 설정되지 않았습니다.");
+  const res = await fetch(
+    `${API_BASE_URL}/v1/verify/${encodeURIComponent(t)}/recheck`,
+    { method: "POST" }
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const msg =
+      (body as { message?: string }).message ||
+      `재검증 요청 실패 (${res.status})`;
+    throw new Error(msg);
+  }
+  return res.json();
 }

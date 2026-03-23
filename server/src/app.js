@@ -1,6 +1,9 @@
 import express from "express";
 import cors from "cors";
+import fs from "fs";
 import multer from "multer";
+import path from "path";
+import { fileURLToPath } from "url";
 import { v4 as uuidv4 } from "uuid";
 import {
   attachAssetToBatch,
@@ -36,6 +39,32 @@ import {
 } from "./mediaHash.js";
 import { enrichMetadataWithOpenCellid } from "./cellGpsAnalysis.js";
 import { countOpenCellidRows } from "./opencellid.js";
+import {
+  getSolanaMerkleAnchorOptions,
+  submitMerkleRootMemo,
+} from "./solanaMerkleAnchor.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+/** 검증 웹 정적 파일 (저장소 루트의 index.html 등). `VERIFY_STATIC_DIR`로 재정의 가능. */
+const VERIFY_STATIC_ROOT = path.resolve(
+  process.env.VERIFY_STATIC_DIR || path.join(__dirname, "..", "..")
+);
+
+const VERIFY_STATIC_FILES = new Set([
+  "index.html",
+  "style.css",
+  "script.js",
+  "404.html",
+  "admin.html",
+  "admin.css",
+  "admin.js",
+  "logo-mark.svg",
+  "logo.png",
+  "logo.webp",
+  ".nojekyll",
+]);
 
 const verifyBaseUrl = process.env.VERIFY_BASE_URL || "https://verify.verity.app/v";
 const corsOrigin = (process.env.CORS_ORIGIN || "*")
@@ -79,11 +108,38 @@ async function finalizePendingBatchMerkle(batchId) {
 
     const leafHashes = batchAssets.map((row) => createAssetLeafHash(row));
     const merkle = buildMerkleTree(leafHashes);
+
+    const anchorOpts = getSolanaMerkleAnchorOptions();
+    let txHash;
+    if (anchorOpts) {
+      try {
+        const { signature } = await submitMerkleRootMemo({
+          merkleRoot: merkle.root,
+          batchId: String(batchId),
+          rpcUrl: anchorOpts.rpcUrl,
+          keypair: anchorOpts.keypair,
+          commitment: anchorOpts.commitment,
+        });
+        txHash = signature;
+        console.log(
+          `[verity-solana] 배치 머클 앵커 OK (${anchorOpts.cluster}): ${signature.slice(0, 16)}…`
+        );
+      } catch (err) {
+        console.error(
+          "[verity-solana] Solana 전송 실패 — 배치는 pending으로 두고 다음 주기에 재시도:",
+          err?.message || err
+        );
+        await client.query("ROLLBACK");
+        return;
+      }
+    } else {
+      txHash = `vrt_batch_${Date.now()}_${String(batchId).slice(0, 8)}`;
+    }
+
     const bnRes = await client.query(
       `SELECT COALESCE(MAX(block_number), 0) + 1 AS n FROM onchain_minute_batches`
     );
     const blockNumber = Number(bnRes.rows[0]?.n ?? 1);
-    const mockTxHash = `vrt_batch_${Date.now()}_${String(batchId).slice(0, 8)}`;
     const onchainTimestampMs = Date.now();
 
     const upd = await client.query(
@@ -98,7 +154,7 @@ async function finalizePendingBatchMerkle(batchId) {
         WHERE id = $1 AND status = 'pending'
         RETURNING id
       `,
-      [batchId, mockTxHash, blockNumber, merkle.root, onchainTimestampMs]
+      [batchId, txHash, blockNumber, merkle.root, onchainTimestampMs]
     );
 
     if (upd.rowCount === 0) {
@@ -107,8 +163,8 @@ async function finalizePendingBatchMerkle(batchId) {
     }
 
     await client.query(
-      `UPDATE assets SET onchain_timestamp_ms = $2, chain_verified = FALSE WHERE batch_id = $1`,
-      [batchId, onchainTimestampMs]
+      `UPDATE assets SET onchain_timestamp_ms = $2, chain_verified = FALSE, chain_tx_signature = $3 WHERE batch_id = $1`,
+      [batchId, onchainTimestampMs, txHash]
     );
 
     for (let index = 0; index < batchAssets.length; index++) {
@@ -649,7 +705,54 @@ export function createApp() {
     }
   });
 
+  mountVerifyWebUi(app);
+
   return app;
+}
+
+/**
+ * 앱/QR이 여는 `GET /v/:token` 에 검증 SPA(index.html)를 내려줍니다.
+ * 정적 자산은 `/verity-static/*` (저장소 루트 파일만 화이트리스트).
+ */
+function mountVerifyWebUi(app) {
+  const indexPath = path.join(VERIFY_STATIC_ROOT, "index.html");
+  if (!fs.existsSync(indexPath)) {
+    console.warn(
+      `[verity] 검증 UI 없음: ${indexPath} 없음. VERIFY_STATIC_DIR 또는 모노레포 루트 배포를 확인하세요.`
+    );
+    return;
+  }
+
+  app.get("/verity-static/:asset", (req, res, next) => {
+    const raw = asString(req.params.asset);
+    const name = path.basename(raw.split("?")[0] || "");
+    if (!name || !VERIFY_STATIC_FILES.has(name)) {
+      return res.status(404).json({ message: "not found" });
+    }
+    const filePath = path.join(VERIFY_STATIC_ROOT, name);
+    const resolved = path.resolve(filePath);
+    if (!resolved.startsWith(path.resolve(VERIFY_STATIC_ROOT))) {
+      return res.status(403).end();
+    }
+    res.sendFile(resolved, (err) => {
+      if (err) next(err);
+    });
+  });
+
+  app.get("/v/:token", (_req, res, next) => {
+    try {
+      let html = fs.readFileSync(indexPath, "utf8");
+      if (!html.includes('name="verity-verify-base"')) {
+        html = html.replace(
+          "<head>",
+          `<head>\n    <base href="/verity-static/" />\n    <meta name="verity-verify-base" content="1" />`
+        );
+      }
+      res.type("html").send(html);
+    } catch (err) {
+      next(err);
+    }
+  });
 }
 
 export async function processMinuteBatches() {

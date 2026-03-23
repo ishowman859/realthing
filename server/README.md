@@ -19,6 +19,18 @@
 조회/재검증 시 해당 블록 배치의 머클트리에서 리프 포함 여부를 다시 검증합니다.  
 `GET /v1/verify/:token` 응답에는 브라우저가 리프를 재계산할 수 있도록 **`assetId`**(내부 UUID)와 **`merkleProof`**(이웃 해시 경로), **`merkleRoot`** 가 포함됩니다. 정적 검증 페이지에서 Web Crypto로 경로를 직접 이어 붙여 루트를 맞출 수 있습니다.
 
+### Solana 머클 앵커 (devnet / mainnet)
+
+`SOLANA_RPC_URL` 과 `SOLANA_MERKLE_KEYPAIR`(또는 `SOLANA_MERKLE_KEYPAIR_PATH`)가 모두 설정되면, 배치가 봉인될 때 **메모 프로그램**(`MemoSq4…`)으로 트랜잭션을 보내 문자열  
+`verity:merkle:v1|{batchId}|{merkleRootHex}`  
+를 온체인에 남깁니다. 서명은 **수수료만 지불**(일반적으로 매우 소액의 SOL)합니다.
+
+- **미설정**: 기존과 같이 `vrt_batch_…` 형태의 **모의** `tx_hash`만 DB에 저장합니다.
+- **전송 실패**: 해당 배치는 `pending`으로 남고, 다음 스케줄 주기에 다시 시도합니다.
+- **`SOLANA_ANCHOR_DISABLED=1`**: 키가 있어도 온체인 전송을 하지 않습니다.
+
+메인넷 사용 시 RPC(예: Helius, QuickNode)와 **별도 faucet이 없는** 실제 SOL 잔액이 필요합니다.
+
 - 세그먼트당 최대 **6만 건** (`BATCH_ITEM_CAP`).
 - 한 세그먼트의 `item_count`가 **5만 이상**이면 같은 분의 **다음 segment 행을 미리 INSERT** (빈 pending, 충돌 시 무시).
 - **머클 봉인(올리기)** 조건 — 둘 중 먼저 만족 시 해당 세그먼트를 `sent` 처리:
@@ -71,13 +83,27 @@ npm run dev
 - `GET /v1/admin/assets?limit=50` (`ADMIN_TOKEN` 필요)
 - `GET /v1/admin/batches?limit=30` (`ADMIN_TOKEN` 필요)
 
+## 검증 웹 (`/v/:token`)
+
+API 서버와 같은 프로세스에서 **저장소 루트의 `index.html`·`script.js`·`style.css`** 등을 내려줍니다. 모노레포에서 `server/` 상위가 웹 루트라고 가정합니다. 다른 경로면 `VERIFY_STATIC_DIR`에 절대 경로를 지정하세요.
+
+- `GET /v/:token` → 검증 SPA (내부에서 `GET /verity-static/script.js` 등으로 자산 로드)
+- 앱/QR의 검증 링크가 **API 호스트와 동일**이면 브라우저가 같은 origin으로 API를 호출합니다.
+
+공개 URL이 `http://YOUR_IP:4000` 이라면 **`VERIFY_BASE_URL=http://YOUR_IP:4000/v`** 로 맞추면 API 응답의 `verificationUrl`·QR도 동일 호스트를 가리킵니다.
+
 ## 환경 변수
 
 - `DATABASE_URL` (필수)
-- `VERIFY_BASE_URL` (기본: `https://verify.verity.app/v`)
+- `VERIFY_BASE_URL` (기본: `https://verify.verity.app/v` — 자가 호스팅 시 위처럼 본인 `/v` URL로 변경)
+- `VERIFY_STATIC_DIR` (선택: 검증 UI 정적 파일이 있는 디렉터리, 기본은 저장소 루트)
 - `ADMIN_TOKEN` (선택: `/admin`, `/v1/admin/*` 보호용)
 - `SILENT_FACE_API_URL` (선택: Silent-Face-Anti-Spoofing 추론 서버 URL)
 - `AWS_*`, `S3_BUCKET` (선택: 업로드 파일 S3 저장)
+- `SOLANA_RPC_URL`, `SOLANA_MERKLE_KEYPAIR` / `SOLANA_MERKLE_KEYPAIR_PATH` (선택: 머클 루트 Solana 메모 앵커)
+- `SOLANA_CLUSTER` (선택: `devnet` / `mainnet-beta` / `testnet`, 미설정 시 RPC URL로 추정)
+- `SOLANA_COMMITMENT` (선택: `confirmed` 기본)
+- `SOLANA_ANCHOR_DISABLED=1` (선택: 앵커 끄기)
 
 예시:
 
@@ -92,7 +118,6 @@ SILENT_FACE_API_URL=http://localhost:8001/predict
   세 경로 **합산**으로 카운트합니다.
 - `POST /v1/assets`, `POST /v1/ingest/sha256`, `POST /v1/verify/upload`, `POST /v1/anti-spoof/check`에는
   별도로 1초 1회 제한(키: IP/owner 등)이 걸려 있습니다.
-- 현재 `sha256` 체인 검증은 `chain_tx_signature` 존재 여부 기반의 MVP 체크입니다.
-- 실제 운영에서는 Polygon RPC에서 tx/event를 조회해 해시 일치 검증으로 교체해야 합니다.
+- 검증 API의 `chainVerified`는 **DB 내 머클 일관성**(리프·경로·루트 재계산) 기준입니다. Solana 앵커가 성공하면 `chainTxSignature`에 **실제 서명(base58)** 이 들어가며, 익스플로러에서 메모 내용을 확인할 수 있습니다. (클라이언트가 RPC로 메모를 재검증하는 단계는 선택 구현입니다.)
 - `phash` 유사도는 DB 후보군에 대해 해밍거리로 계산하는 MVP 방식이며,
   트래픽 증가 시 Milvus/Pinecone 등 벡터DB로 이전하면 됩니다.

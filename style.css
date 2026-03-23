@@ -451,6 +451,190 @@ body {
   font-family: var(--font);
 }
 
+.merkle-chain-panel {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(13, 159, 110, 0.25);
+  background: rgba(20, 241, 149, 0.06);
+}
+
+.merkle-chain-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.merkle-chain-note {
+  margin: 12px 0 0;
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* Merkle path tree (root at top — SPV path reconstruction) */
+.merkle-viz {
+  margin: 0 0 20px;
+  padding: 16px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(49, 130, 246, 0.22);
+  background: linear-gradient(165deg, rgba(49, 130, 246, 0.07) 0%, rgba(248, 250, 252, 0.9) 100%);
+}
+
+.merkle-viz__title {
+  margin: 0 0 14px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.merkle-viz__loading {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.merkle-viz__row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.merkle-viz__row + .merkle-viz__row {
+  margin-top: 4px;
+}
+
+.merkle-viz__node {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.04);
+}
+
+.merkle-viz__node--root {
+  border-color: rgba(13, 159, 110, 0.45);
+  background: rgba(20, 241, 149, 0.1);
+}
+
+.merkle-viz__node--leaf {
+  border-color: rgba(49, 130, 246, 0.35);
+  background: rgba(49, 130, 246, 0.06);
+}
+
+.merkle-viz__badge {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--text);
+  color: #fff;
+}
+
+.merkle-viz__node--root .merkle-viz__badge {
+  background: #0d9f6e;
+}
+
+.merkle-viz__node--leaf .merkle-viz__badge {
+  background: #3182f6;
+}
+
+.merkle-viz__hash {
+  flex: 1 1 200px;
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  word-break: break-all;
+  color: var(--text);
+  font-family: var(--mono);
+}
+
+.merkle-viz__match {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.merkle-viz__match--ok {
+  background: rgba(20, 241, 149, 0.15);
+  color: #047857;
+  border: 1px solid rgba(13, 159, 110, 0.25);
+}
+
+.merkle-viz__match--bad {
+  background: rgba(248, 113, 113, 0.12);
+  color: #b91c1c;
+  border: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+.merkle-viz__connector {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 6px;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  user-select: none;
+}
+
+.merkle-viz__step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  padding: 8px 10px;
+  margin-left: 8px;
+  border-left: 2px solid rgba(49, 130, 246, 0.35);
+  padding-left: 14px;
+  margin-bottom: 4px;
+}
+
+.merkle-viz__step-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  width: 100%;
+}
+
+.merkle-viz__sibling {
+  font-size: 10px;
+  font-family: var(--mono);
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: rgba(241, 245, 249, 0.95);
+  border: 1px dashed var(--border);
+  word-break: break-all;
+  max-width: 100%;
+}
+
+.merkle-viz__pos {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.merkle-viz__child-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  width: 100%;
+  margin-top: 2px;
+}
+
 .upload-row--wallet {
   display: flex;
   flex-wrap: wrap;

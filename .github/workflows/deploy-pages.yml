@@ -51,7 +51,7 @@ jobs:
               p.write_text(inject_gh_pages(t), encoding="utf-8")
           PY
 
-      - name: Inject default API URL into HTML (optional)
+      - name: Set default API URL in HTML (GitHub Pages ↔ 백엔드)
         env:
           VERITY_PAGES_API: ${{ vars.VERITY_PAGES_API }}
         run: |
@@ -62,22 +62,31 @@ jobs:
           from pathlib import Path
 
           api = (os.environ.get("VERITY_PAGES_API") or "").strip()
-          if not api:
-              print("VERITY_PAGES_API not set; leaving meta verity-default-api empty (use ?api= on site).")
-          else:
-              esc = html_lib.escape(api, quote=True)
-              meta_pat = re.compile(
-                  r'(<meta\s+name="verity-default-api"\s+content=")[^"]*(")',
-                  re.IGNORECASE,
-              )
-              for fname in ("index.html", "admin.html"):
-                  p = Path(fname)
-                  t = p.read_text(encoding="utf-8")
+          meta_pat = re.compile(
+              r'(<meta\s+name="verity-default-api"\s+content=")[^"]*(")',
+              re.IGNORECASE,
+          )
+          for fname in ("index.html", "admin.html"):
+              p = Path(fname)
+              t = p.read_text(encoding="utf-8")
+              if api:
+                  esc = html_lib.escape(api, quote=True)
                   t2, n = meta_pat.subn(rf"\1{esc}\2", t, count=1)
                   if n != 1:
                       raise SystemExit(f"verity-default-api meta not found in {fname}")
                   p.write_text(t2, encoding="utf-8")
-              print("Injected VERITY_PAGES_API into", "index.html, admin.html")
+              else:
+                  t2, n = meta_pat.subn(r"\1\2", t, count=1)
+                  if n != 1:
+                      raise SystemExit(f"verity-default-api meta not found in {fname}")
+                  p.write_text(t2, encoding="utf-8")
+          if api:
+              print("Injected VERITY_PAGES_API into index.html, admin.html")
+          else:
+              print(
+                  "VERITY_PAGES_API not set: cleared verity-default-api meta on deploy. "
+                  "Pages에서 ?api=https://백엔드 로 지정하세요."
+              )
           PY
 
       - name: Collect static site for Pages
