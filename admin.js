@@ -3,13 +3,26 @@ const isGithubPages =
   /\.github\.io$/i.test(window.location.hostname) ||
   document.querySelector('meta[name="verity-gh-pages"]')?.getAttribute("content") === "1";
 const h = window.location.hostname;
-const defaultApiBase =
+const apiFromMeta =
+  document
+    .querySelector('meta[name="verity-default-api"]')
+    ?.getAttribute("content")
+    ?.trim() || "";
+
+function normalizeApiBase(b) {
+  if (!b) return "";
+  return String(b).trim().replace(/\/+$/, "");
+}
+
+const defaultApiBase = normalizeApiBase(
   params.get("api") ||
-  (h === "localhost" || h === "127.0.0.1"
-    ? "http://localhost:4000"
-    : isGithubPages
-      ? ""
-      : "/api");
+    apiFromMeta ||
+    (h === "localhost" || h === "127.0.0.1"
+      ? "http://localhost:4000"
+      : isGithubPages
+        ? ""
+        : "/api")
+);
 const apiBaseInput = document.getElementById("apiBase");
 const adminTokenInput = document.getElementById("adminToken");
 const statusText = document.getElementById("statusText");
