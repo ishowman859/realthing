@@ -54,7 +54,7 @@ export async function stampMonitorWatermark(imageUri: string): Promise<string> {
     cursorX += letterWidth + gap;
   }
 
-  const encoded = jpeg.encode(
+  const encoded = (jpeg as any).encode(
     { data: rgba, width, height },
     90
   );

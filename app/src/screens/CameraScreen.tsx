@@ -23,6 +23,7 @@ import {
   runFirstStageFilter,
 } from "../utils/firstStageFilter";
 import { HashMode } from "../utils/verityApi";
+import { stampHashProofWatermark } from "../utils/hashStampWatermark";
 import { stampMonitorWatermark } from "../utils/monitorWatermark";
 import { ui } from "../theme/tokens";
 
@@ -512,6 +513,10 @@ export default function CameraScreen({
                   <Text style={styles.hashLabel}>검증 URL</Text>
                   <Text style={styles.hashValue} numberOfLines={1}>
                     {verificationUrl}
+                  </Text>
+                  <Text style={styles.anchorHintText}>
+                    서버가 약 10초 단위로 SHA-256 / pHash 머클트리를 묶어 Solana에 루트를 앵커링합니다.
+                    잠시 후 검증 페이지에서 두 트리 상태를 확인할 수 있습니다.
                   </Text>
                   <TouchableOpacity
                     style={styles.linkButton}
@@ -1060,6 +1065,12 @@ const styles = StyleSheet.create({
     color: ui.primary,
     fontSize: 14,
     fontWeight: "700",
+  },
+  anchorHintText: {
+    color: ui.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 8,
   },
   qrImage: {
     width: 160,

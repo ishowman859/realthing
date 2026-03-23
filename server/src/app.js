@@ -9,6 +9,8 @@ import {
   attachAssetToBatch,
   countSha256ByOwner,
   getAssetByToken,
+  getLatestAssetByPhash,
+  getLatestAssetBySha256,
   getBatchById,
   getBatchAssets,
   pool,
@@ -16,6 +18,7 @@ import {
   ensureFollowingBatchPrepared,
   listBatchesReadyForMerkleFlush,
   listAssetsByOwner,
+  listAssetsWithPhash,
   listRecentAssets,
   listRecentBatches,
   listPhashCandidates,
@@ -24,7 +27,7 @@ import {
   insertAsset,
   BATCH_MERKLE_IMMEDIATE_AT_COUNT,
 } from "./db.js";
-import { getBestDuplicateScore } from "./phash.js";
+import { getBestDuplicateScore, similarityFromPhash } from "./phash.js";
 import {
   buildMerkleTree,
   createAssetLeafHash,
@@ -106,21 +109,32 @@ async function finalizePendingBatchMerkle(batchId) {
       return;
     }
 
-    const leafHashes = batchAssets.map((row) => createAssetLeafHash(row));
-    const merkle = buildMerkleTree(leafHashes);
+    const sha256Assets = batchAssets.filter((row) => !!asString(row.sha256));
+    const phashAssets = batchAssets.filter((row) => !!asString(row.phash));
+    const sha256LeafHashes = sha256Assets.map((row) =>
+      createAssetLeafHash(row, "sha256")
+    );
+    const phashLeafHashes = phashAssets.map((row) =>
+      createAssetLeafHash(row, "phash")
+    );
+    const sha256Merkle = buildMerkleTree(sha256LeafHashes);
+    const phashMerkle = buildMerkleTree(phashLeafHashes);
 
     const anchorOpts = getSolanaMerkleAnchorOptions();
     let txHash;
+    let anchorPayload = null;
     if (anchorOpts) {
       try {
-        const { signature } = await submitMerkleRootMemo({
-          merkleRoot: merkle.root,
+        const { signature, payload } = await submitMerkleRootMemo({
           batchId: String(batchId),
+          sha256Root: sha256Merkle.root,
+          phashRoot: phashMerkle.root,
           rpcUrl: anchorOpts.rpcUrl,
           keypair: anchorOpts.keypair,
           commitment: anchorOpts.commitment,
         });
         txHash = signature;
+        anchorPayload = payload;
         console.log(
           `[verity-solana] 배치 머클 앵커 OK (${anchorOpts.cluster}): ${signature.slice(0, 16)}…`
         );
@@ -134,6 +148,12 @@ async function finalizePendingBatchMerkle(batchId) {
       }
     } else {
       txHash = `vrt_batch_${Date.now()}_${String(batchId).slice(0, 8)}`;
+      anchorPayload = JSON.stringify({
+        version: "verity:merkle:v2",
+        batchId: String(batchId),
+        sha256Root: sha256Merkle.root,
+        phashRoot: phashMerkle.root,
+      });
     }
 
     const bnRes = await client.query(
@@ -149,12 +169,32 @@ async function finalizePendingBatchMerkle(batchId) {
             tx_hash = $2,
             block_number = $3,
             merkle_root = $4,
-            onchain_timestamp_ms = $5,
+            sha256_merkle_root = $5,
+            phash_merkle_root = $6,
+            merkle_anchor_payload_json = $7::jsonb,
+            onchain_timestamp_ms = $8,
             sent_at = NOW()
         WHERE id = $1 AND status = 'pending'
         RETURNING id
       `,
-      [batchId, txHash, blockNumber, merkle.root, onchainTimestampMs]
+      [
+        batchId,
+        txHash,
+        blockNumber,
+        pickPrimaryMerkleRoot(sha256Merkle.root, phashMerkle.root),
+        sha256Merkle.root,
+        phashMerkle.root,
+        safeJsonStringify(
+          parseMaybeJson(anchorPayload) || {
+            version: "verity:merkle:v2",
+            batchId: String(batchId),
+            sha256Root: sha256Merkle.root,
+            phashRoot: phashMerkle.root,
+            txSignature: txHash,
+          }
+        ),
+        onchainTimestampMs,
+      ]
     );
 
     if (upd.rowCount === 0) {
@@ -167,22 +207,50 @@ async function finalizePendingBatchMerkle(batchId) {
       [batchId, onchainTimestampMs, txHash]
     );
 
-    for (let index = 0; index < batchAssets.length; index++) {
-      const row = batchAssets[index];
+    const sha256ProofMap = new Map();
+    for (let index = 0; index < sha256Assets.length; index += 1) {
+      sha256ProofMap.set(sha256Assets[index].id, {
+        leafHash: sha256LeafHashes[index],
+        proof: sha256Merkle.proofs[index] ?? [],
+      });
+    }
+    const phashProofMap = new Map();
+    for (let index = 0; index < phashAssets.length; index += 1) {
+      phashProofMap.set(phashAssets[index].id, {
+        leafHash: phashLeafHashes[index],
+        proof: phashMerkle.proofs[index] ?? [],
+      });
+    }
+
+    for (const row of batchAssets) {
+      const sha256Node = sha256ProofMap.get(row.id) || null;
+      const phashNode = phashProofMap.get(row.id) || null;
+      const preferredNode =
+        String(row.mode || "").toLowerCase() === "phash"
+          ? phashNode || sha256Node
+          : sha256Node || phashNode;
       await client.query(
         `
           UPDATE assets
           SET indexed_block_number = $2,
               merkle_leaf_hash = $3,
               merkle_proof_json = $4::jsonb,
+              sha256_merkle_leaf_hash = $5,
+              sha256_merkle_proof_json = $6::jsonb,
+              phash_merkle_leaf_hash = $7,
+              phash_merkle_proof_json = $8::jsonb,
               updated_at = NOW()
           WHERE id = $1
         `,
         [
           row.id,
           blockNumber,
-          leafHashes[index],
-          JSON.stringify(merkle.proofs[index] ?? []),
+          preferredNode?.leafHash ?? null,
+          safeJsonStringify(preferredNode?.proof ?? []),
+          sha256Node?.leafHash ?? null,
+          safeJsonStringify(sha256Node?.proof ?? []),
+          phashNode?.leafHash ?? null,
+          safeJsonStringify(phashNode?.proof ?? []),
         ]
       );
     }
@@ -231,6 +299,11 @@ export function createApp() {
     intervalMs: 1000,
     keyResolver: (req) => `verify-upload:${getClientIp(req)}`,
     message: "파일 업로드는 1초에 1회만 가능합니다.",
+  });
+  const onePerSecondVerifyLookupGuard = createRequestIntervalGuard({
+    intervalMs: 1000,
+    keyResolver: (req) => `verify-lookup:${getClientIp(req)}`,
+    message: "해시 검증 조회는 1초에 1회만 가능합니다.",
   });
 
   const uploadPerMinuteByIp = createSlidingWindowRateLimit({
@@ -342,7 +415,7 @@ export function createApp() {
       let metadata = parseMaybeJson(body.metadata);
       const teeProof = parseMaybeJson(body.teeProof);
       const capturedTimestampMs = extractCapturedTimestamp(metadata, teeProof);
-      const minuteBucket = minuteBucketIso(capturedTimestampMs);
+      const minuteBucket = batchWindowBucketIso(capturedTimestampMs);
       const gps = extractGps(metadata);
       metadata = await enrichMetadataWithOpenCellid(metadata, gps);
       const batch = await getBatchSlotForMinuteBucket(minuteBucket);
@@ -392,7 +465,7 @@ export function createApp() {
     }
   });
 
-  // [각주3] 기기에서 계산한 SHA-256(+선택 pHash)를 받아, 서버 수신 시각 기준 1분 버킷으로 묶어 배치합니다.
+  // [각주3] 기기에서 계산한 SHA-256(+선택 pHash)를 받아, 서버 수신 시각 기준 10초 버킷으로 묶어 배치합니다.
   // 사진: 흑백 근사 pHash / 동영상: 구간 샘플+장면전환 키프레임은 metadata.videoPhashKeyframes 로 저장.
   // (온체인 머클 처리는 processMinuteBatches와 동일 파이프라인)
   app.post(
@@ -423,7 +496,7 @@ export function createApp() {
       }
 
       const receivedMs = Date.now();
-      const minuteBucket = minuteBucketIso(receivedMs);
+      const minuteBucket = batchWindowBucketIso(receivedMs);
       const capturedTimestampMs =
         toIntOrNull(body.capturedTimestampMs) ?? receivedMs;
       const metadata = parseMaybeJson(body.metadata);
@@ -442,12 +515,12 @@ export function createApp() {
               ...metadata,
               ingestChannel,
               serverReceivedAtMs: receivedMs,
-              batchMinuteBucket: minuteBucket,
+              batchWindowBucket: minuteBucket,
             }
           : {
               ingestChannel,
               serverReceivedAtMs: receivedMs,
-              batchMinuteBucket: minuteBucket,
+              batchWindowBucket: minuteBucket,
             };
 
       const gps = extractGps(mergedMetadata);
@@ -552,6 +625,8 @@ export function createApp() {
           txHash: row.tx_hash,
           blockNumber: row.block_number,
           merkleRoot: row.merkle_root,
+          sha256MerkleRoot: row.sha256_merkle_root,
+          phashMerkleRoot: row.phash_merkle_root,
           onchainTimestampMs: row.onchain_timestamp_ms,
           createdAt: row.created_at,
           sentAt: row.sent_at,
@@ -610,7 +685,7 @@ export function createApp() {
         const token = createToken();
         const serial = createSerial("phash");
         const capturedTimestampMs = Date.now();
-        const minuteBucket = minuteBucketIso(capturedTimestampMs);
+        const minuteBucket = batchWindowBucketIso(capturedTimestampMs);
         const batch = await getBatchSlotForMinuteBucket(minuteBucket);
         const metadata = {
           source: "verify-web-upload",
@@ -659,6 +734,80 @@ export function createApp() {
       } catch (error) {
         console.error(error);
         res.status(500).json({ message: "업로드 등록 실패" });
+      }
+    }
+  );
+
+  /** 브라우저가 계산한 파일 SHA-256으로 등록 기록 조회 (토큰 없이 검증) */
+  app.get("/v1/verify/lookup", onePerSecondVerifyLookupGuard, async (req, res) => {
+    try {
+      const sha256Raw = asString(req.query.sha256);
+      const sha256 = sha256Raw.toLowerCase();
+      if (!sha256Raw || !isValidSha256Hex(sha256)) {
+        return res
+          .status(400)
+          .json({ message: "쿼리 sha256(64자리 16진 소문자)이 필요합니다." });
+      }
+      const row = await getLatestAssetBySha256(sha256);
+      if (!row) {
+        return res
+          .status(404)
+          .json({ message: "동일한 SHA-256으로 등록된 기록이 없습니다." });
+      }
+      const merkleCheck = await verifyAssetAgainstIndexedBlock(row);
+      res.json(toVerificationView(row, merkleCheck));
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: "검증 정보 조회 실패" });
+    }
+  });
+
+  app.post(
+    "/v1/verify/search-upload",
+    uploadPerMinuteByIp,
+    onePerSecondVerifyUploadGuard,
+    (req, res, next) => {
+      verifyWebUpload.single("file")(req, res, (err) => {
+        if (err) {
+          if (err.code === "LIMIT_FILE_SIZE") {
+            return res.status(413).json({ message: "파일 크기 제한을 초과했습니다." });
+          }
+          return res.status(400).json({ message: err.message || "업로드 처리 실패" });
+        }
+        next();
+      });
+    },
+    async (req, res) => {
+      try {
+        const file = req.file;
+        if (!file?.buffer) {
+          return res.status(400).json({ message: "file 필드로 이미지 파일을 보내주세요." });
+        }
+        const mime = asString(file.mimetype);
+        if (!isProbablyImageMime(mime)) {
+          return res.status(400).json({ message: "이미지 파일만 검색할 수 있습니다." });
+        }
+
+        const sha256 = sha256Buffer(file.buffer);
+        const phash = await averageHash16FromImageBuffer(file.buffer);
+        const match = await findBestVerificationMatch({ sha256, phash });
+
+        res.json({
+          query: {
+            sha256,
+            phash,
+            mimeType: mime,
+            originalName: asString(file.originalname) || null,
+            size: file.size,
+          },
+          exactMatchType: match.exactMatchType,
+          bestPhashScore: match.bestPhashScore,
+          verification: match.verification,
+          similarMatches: match.similarMatches,
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "이미지 해시 검색 실패" });
       }
     }
   );
@@ -768,6 +917,24 @@ export async function processMinuteBatches() {
   }
 }
 
+function safeJsonStringify(value) {
+  return JSON.stringify(value ?? null);
+}
+
+function pickPrimaryMerkleRoot(sha256Root, phashRoot) {
+  return sha256Root || phashRoot || null;
+}
+
+function pickPreferredTreeType(row) {
+  if (String(row?.mode || "").toLowerCase() === "phash" && row?.phash_merkle_leaf_hash) {
+    return "phash";
+  }
+  if (row?.sha256_merkle_leaf_hash) return "sha256";
+  if (row?.phash_merkle_leaf_hash) return "phash";
+  if (String(row?.mode || "").toLowerCase() === "phash") return "phash";
+  return "sha256";
+}
+
 function toClientRecord(row, verifyBase) {
   const verificationUrl = `${verifyBase.replace(/\/$/, "")}/${row.token}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(
@@ -808,6 +975,9 @@ function toClientRecord(row, verifyBase) {
 }
 
 function toVerificationView(row, merkleCheck = null) {
+  const merkleTrees = merkleCheck?.trees || buildEmptyMerkleTrees();
+  const preferredTreeType = merkleCheck?.preferredTreeType || pickPreferredTreeType(row);
+  const preferredTree = merkleTrees[preferredTreeType] || merkleTrees.sha256;
   return {
     token: row.token,
     /** 머클 리프 직렬화(createAssetLeafHash)에 필요 — 브라우저가 서버 없이 리프 재계산 시 사용 */
@@ -823,10 +993,13 @@ function toVerificationView(row, merkleCheck = null) {
     onchainTimestampMs: row.onchain_timestamp_ms,
     indexedBlockNumber:
       merkleCheck?.blockNumber ?? row.indexed_block_number ?? null,
-    merkleLeafHash: row.merkle_leaf_hash ?? null,
-    merkleProof: row.merkle_proof_json ?? null,
-    merkleRoot: merkleCheck?.storedRoot ?? null,
-    computedMerkleRoot: merkleCheck?.computedRoot ?? null,
+    merkleTreeType: preferredTreeType,
+    merkleLeafHash: preferredTree?.leafHash ?? row.merkle_leaf_hash ?? null,
+    merkleProof: preferredTree?.proof ?? row.merkle_proof_json ?? null,
+    merkleRoot: preferredTree?.storedRoot ?? merkleCheck?.storedRoot ?? null,
+    computedMerkleRoot:
+      preferredTree?.computedRoot ?? merkleCheck?.computedRoot ?? null,
+    merkleTrees,
     gps: {
       lat: row.gps_lat,
       lng: row.gps_lng,
@@ -845,6 +1018,25 @@ function toVerificationView(row, merkleCheck = null) {
     duplicateScore: row.duplicate_score,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function buildEmptyMerkleTrees() {
+  return {
+    sha256: emptyMerkleTreeView("sha256"),
+    phash: emptyMerkleTreeView("phash"),
+  };
+}
+
+function emptyMerkleTreeView(type) {
+  return {
+    type,
+    leafHash: null,
+    proof: null,
+    storedRoot: null,
+    computedRoot: null,
+    verified: false,
+    reason: "missing",
   };
 }
 
@@ -924,10 +1116,12 @@ function extractGps(metadata) {
   return null;
 }
 
-function minuteBucketIso(tsMs) {
-  const d = new Date(tsMs);
-  d.setSeconds(0, 0);
-  return d.toISOString();
+function batchWindowBucketIso(tsMs) {
+  const bucketMs = Number(process.env.BATCH_WINDOW_MS || 10_000);
+  const normalizedBucketMs =
+    Number.isFinite(bucketMs) && bucketMs >= 1_000 ? Math.floor(bucketMs) : 10_000;
+  const bucketStartMs = Math.floor(tsMs / normalizedBucketMs) * normalizedBucketMs;
+  return new Date(bucketStartMs).toISOString();
 }
 
 function isValidSha256Hex(value) {
@@ -1048,23 +1242,32 @@ function getClientIp(req) {
 }
 
 async function verifyAssetAgainstIndexedBlock(row) {
+  const trees = buildEmptyMerkleTrees();
+  const preferredTreeType = pickPreferredTreeType(row);
   if (!row?.batch_id) {
     return {
       verified: false,
       blockNumber: row?.indexed_block_number ?? null,
       storedRoot: null,
       computedRoot: null,
+      trees,
+      preferredTreeType,
       reason: "batch_missing",
     };
   }
 
   const batch = await getBatchById(row.batch_id);
-  if (!batch?.block_number || !batch?.merkle_root) {
+  if (
+    !batch?.block_number ||
+    (!batch?.sha256_merkle_root && !batch?.phash_merkle_root && !batch?.merkle_root)
+  ) {
     return {
       verified: false,
       blockNumber: row?.indexed_block_number ?? null,
       storedRoot: batch?.merkle_root ?? null,
       computedRoot: null,
+      trees,
+      preferredTreeType,
       reason: "batch_not_finalized",
     };
   }
@@ -1076,40 +1279,155 @@ async function verifyAssetAgainstIndexedBlock(row) {
       blockNumber: batch.block_number,
       storedRoot: batch.merkle_root,
       computedRoot: null,
+      trees,
+      preferredTreeType,
       reason: "batch_empty",
     };
   }
 
-  const leafHashes = batchAssets.map((asset) => createAssetLeafHash(asset));
-  const merkle = buildMerkleTree(leafHashes);
+  trees.sha256 = verifyMerkleTreeForAsset({
+    type: "sha256",
+    row,
+    batch,
+    batchAssets: batchAssets.filter((asset) => !!asString(asset.sha256)),
+    batchRoot: batch.sha256_merkle_root || batch.merkle_root,
+    storedLeafHash: row.sha256_merkle_leaf_hash,
+    storedProof: row.sha256_merkle_proof_json,
+  });
+  trees.phash = verifyMerkleTreeForAsset({
+    type: "phash",
+    row,
+    batch,
+    batchAssets: batchAssets.filter((asset) => !!asString(asset.phash)),
+    batchRoot: batch.phash_merkle_root,
+    storedLeafHash: row.phash_merkle_leaf_hash,
+    storedProof: row.phash_merkle_proof_json,
+  });
+
+  const preferredTree = trees[preferredTreeType] || trees.sha256;
+  const blockVerified =
+    !row.indexed_block_number ||
+    Number(row.indexed_block_number) === Number(batch.block_number);
+
+  return {
+    verified: !!preferredTree.verified && blockVerified,
+    blockNumber: batch.block_number,
+    storedRoot: preferredTree.storedRoot,
+    computedRoot: preferredTree.computedRoot,
+    trees,
+    preferredTreeType,
+    reason:
+      preferredTree.verified && blockVerified ? "ok" : preferredTree.reason || "merkle_mismatch",
+  };
+}
+
+function verifyMerkleTreeForAsset({
+  type,
+  row,
+  batch,
+  batchAssets,
+  batchRoot,
+  storedLeafHash,
+  storedProof,
+}) {
+  if (!batchRoot || !Array.isArray(batchAssets) || batchAssets.length === 0) {
+    return {
+      type,
+      leafHash: storedLeafHash || null,
+      proof: Array.isArray(storedProof) ? storedProof : null,
+      storedRoot: batchRoot || null,
+      computedRoot: null,
+      verified: false,
+      reason: "tree_missing",
+    };
+  }
+
   const targetIndex = batchAssets.findIndex((asset) => asset.id === row.id);
+  const leafHashes = batchAssets.map((asset) => createAssetLeafHash(asset, type));
+  const merkle = buildMerkleTree(leafHashes);
   if (targetIndex < 0) {
     return {
-      verified: false,
-      blockNumber: batch.block_number,
-      storedRoot: batch.merkle_root,
+      type,
+      leafHash: storedLeafHash || null,
+      proof: Array.isArray(storedProof) ? storedProof : null,
+      storedRoot: batchRoot,
       computedRoot: merkle.root,
-      reason: "asset_not_found",
+      verified: false,
+      reason: "asset_not_in_tree",
     };
   }
 
   const targetLeaf = leafHashes[targetIndex];
-  const proof = Array.isArray(row.merkle_proof_json)
-    ? row.merkle_proof_json
-    : merkle.proofs[targetIndex];
-  const proofVerified = verifyMerkleProof(targetLeaf, proof, batch.merkle_root);
-  const rootVerified = merkle.root === batch.merkle_root;
-  const leafVerified = !row.merkle_leaf_hash || row.merkle_leaf_hash === targetLeaf;
-  const blockVerified =
-    !row.indexed_block_number || Number(row.indexed_block_number) === Number(batch.block_number);
+  const proof = Array.isArray(storedProof) ? storedProof : merkle.proofs[targetIndex];
+  const proofVerified = verifyMerkleProof(targetLeaf, proof, batchRoot);
+  const rootVerified = merkle.root === batchRoot;
+  const leafVerified = !storedLeafHash || storedLeafHash === targetLeaf;
 
   return {
-    verified: proofVerified && rootVerified && leafVerified && blockVerified,
-    blockNumber: batch.block_number,
-    storedRoot: batch.merkle_root,
+    type,
+    leafHash: targetLeaf,
+    proof,
+    storedRoot: batchRoot,
     computedRoot: merkle.root,
+    verified: proofVerified && rootVerified && leafVerified,
     reason:
-      proofVerified && rootVerified && leafVerified && blockVerified ? "ok" : "merkle_mismatch",
+      proofVerified && rootVerified && leafVerified ? "ok" : "merkle_mismatch",
+  };
+}
+
+async function findBestVerificationMatch({ sha256, phash }) {
+  const exactSha256Row = sha256 ? await getLatestAssetBySha256(sha256) : null;
+  const exactPhashRow =
+    !exactSha256Row && phash ? await getLatestAssetByPhash(phash) : null;
+  const exactRow = exactSha256Row || exactPhashRow;
+
+  let verification = null;
+  if (exactRow) {
+    verification = toVerificationView(
+      exactRow,
+      await verifyAssetAgainstIndexedBlock(exactRow)
+    );
+  }
+
+  const similarMatches = [];
+  let bestPhashScore = null;
+  if (phash) {
+    const candidates = await listAssetsWithPhash(2000);
+    const scored = candidates
+      .map((candidate) => ({
+        row: candidate,
+        score: similarityFromPhash(phash, candidate.phash),
+      }))
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 5);
+
+    bestPhashScore = scored.length > 0 ? scored[0].score : null;
+    for (const entry of scored) {
+      similarMatches.push({
+        token: entry.row.token,
+        score: entry.score,
+        serial: entry.row.serial,
+        owner: entry.row.owner,
+        mode: entry.row.mode,
+        mediaType: entry.row.media_type,
+        createdAt: entry.row.created_at,
+      });
+    }
+
+    if (!verification && scored.length > 0) {
+      verification = toVerificationView(
+        scored[0].row,
+        await verifyAssetAgainstIndexedBlock(scored[0].row)
+      );
+    }
+  }
+
+  return {
+    exactMatchType: exactSha256Row ? "sha256" : exactPhashRow ? "phash" : null,
+    bestPhashScore,
+    verification,
+    similarMatches,
   };
 }
 

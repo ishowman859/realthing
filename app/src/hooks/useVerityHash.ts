@@ -80,7 +80,7 @@ export function useVerityHash(ownerAddress: string) {
 
         if (mode === "sha256") {
           // [각주1] SHA-256 + pHash(선택). 사진은 동시 계산, 동영상은 구간 썸네일+장면전환 키프레임.
-          // 서버는 수신 시각 기준 1분 버킷으로 모아 머클 배치(processMinuteBatches)합니다.
+          // 서버는 수신 시각 기준 10초 버킷으로 묶어 SHA-256/pHash 머클 배치를 생성합니다.
           const mediaType = opts?.mediaType ?? "photo";
           let phashVal: string | null = null;
           let mergedMeta: Record<string, unknown> = { ...(metadata ?? {}) };

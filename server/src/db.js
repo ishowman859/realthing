@@ -25,7 +25,7 @@ export const BATCH_MERKLE_IMMEDIATE_AT_COUNT = Number(
 );
 /** 머클 봉인: 첫 자산 시각(first_item_at) 기준 이 초가 지나면 봉인 */
 export const BATCH_MERKLE_FLUSH_INTERVAL_SEC = Number(
-  process.env.BATCH_MERKLE_FLUSH_INTERVAL_SEC || 5
+  process.env.BATCH_MERKLE_FLUSH_INTERVAL_SEC || 10
 );
 
 export async function initDatabase() {
@@ -97,6 +97,45 @@ export async function getAssetByToken(token) {
     token,
   ]);
   return rows[0] ?? null;
+}
+
+/** 동일 바이트 SHA-256으로 등록된 자산 중 가장 최근 행 (검증 웹 해시 조회용) */
+export async function getLatestAssetBySha256(sha256Hex) {
+  const h = String(sha256Hex || "").trim().toLowerCase();
+  if (!h) return null;
+  const { rows } = await pool.query(
+    `SELECT * FROM assets
+     WHERE sha256 IS NOT NULL AND LOWER(sha256) = $1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [h]
+  );
+  return rows[0] ?? null;
+}
+
+export async function getLatestAssetByPhash(phashHex) {
+  const h = String(phashHex || "").trim().toLowerCase();
+  if (!h) return null;
+  const { rows } = await pool.query(
+    `SELECT * FROM assets
+     WHERE phash IS NOT NULL AND LOWER(phash) = $1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [h]
+  );
+  return rows[0] ?? null;
+}
+
+export async function listAssetsWithPhash(limit = 500) {
+  const safeLimit = Math.max(1, Math.min(5000, Number(limit) || 500));
+  const { rows } = await pool.query(
+    `SELECT * FROM assets
+     WHERE phash IS NOT NULL
+     ORDER BY created_at DESC
+     LIMIT $1`,
+    [safeLimit]
+  );
+  return rows;
 }
 
 export async function countSha256ByOwner(owner) {

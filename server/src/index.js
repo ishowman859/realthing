@@ -12,7 +12,7 @@ initDatabase()
     });
     setInterval(() => {
       void processMinuteBatches();
-    }, 5_000);
+    }, 2_000);
   })
   .catch((error) => {
     console.error("DB 초기화 실패:", error);

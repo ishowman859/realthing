@@ -13,7 +13,7 @@ export async function createTeeProofForSha256(input: {
 }): Promise<TeeProof> {
   const timestamp = Date.now();
   const nonce = await Crypto.getRandomBytesAsync(16).then((bytes) =>
-    bytes.map((b) => b.toString(16).padStart(2, "0")).join("")
+    Array.from(bytes as Uint8Array).map((b) => b.toString(16).padStart(2, "0")).join("")
   );
 
   return {

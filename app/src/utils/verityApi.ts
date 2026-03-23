@@ -48,7 +48,7 @@ export interface VerificationAssetRecord {
   phash?: string;
   capturedTimestampMs?: number;
   onchainTimestampMs?: number | null;
-  gps?: { lat: number | null; lng: number | null };
+  gps?: { lat: number | null; lng: number | null } | null;
   aiRiskScore?: number;
   metadata?: Record<string, unknown>;
   chainTxSignature?: string | null;
@@ -124,7 +124,7 @@ export interface Sha256IngestInput {
   metadata?: Record<string, unknown>;
 }
 
-/** 기기에서 계산한 SHA-256(+선택 pHash)을 서버로 보냅니다. 서버가 수신 시각 기준 1분 버킷으로 배치합니다. */
+/** 기기에서 계산한 SHA-256(+선택 pHash)을 서버로 보냅니다. 서버가 수신 시각 기준 10초 버킷으로 배치합니다. */
 export async function registerSha256Ingest(
   input: Sha256IngestInput
 ): Promise<VerificationAssetRecord> {
@@ -344,16 +344,31 @@ export interface VerificationLookupPayload {
   capturedTimestampMs?: number;
   onchainTimestampMs?: number | null;
   indexedBlockNumber?: number | null;
+  merkleTreeType?: "sha256" | "phash";
   merkleLeafHash?: string | null;
   merkleProof?: MerkleProofNodeApi[] | null;
   merkleRoot?: string | null;
   computedMerkleRoot?: string | null;
+  merkleTrees?: {
+    sha256?: VerificationMerkleTree | null;
+    phash?: VerificationMerkleTree | null;
+  };
   chainTxSignature?: string | null;
   chainVerified?: boolean;
   duplicateScore?: number | null;
   aiRiskScore?: number | null;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface VerificationMerkleTree {
+  type: "sha256" | "phash";
+  leafHash?: string | null;
+  proof?: MerkleProofNodeApi[] | null;
+  storedRoot?: string | null;
+  computedRoot?: string | null;
+  verified?: boolean;
+  reason?: string | null;
 }
 
 export async function fetchVerificationByToken(

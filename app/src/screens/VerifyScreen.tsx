@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import {
   fetchVerificationByToken,
   recheckVerificationByToken,
+  VerificationMerkleTree,
   VerificationLookupPayload,
 } from "../utils/verityApi";
 import {
@@ -146,6 +147,26 @@ function MerkleTreeVizPanel({ state }: { state: MerkleVizState }) {
           </View>
         );
       })}
+    </View>
+  );
+}
+
+function MerkleTreeSummary({
+  label,
+  tree,
+}: {
+  label: string;
+  tree?: VerificationMerkleTree | null;
+}) {
+  if (!tree) return null;
+  const proofCount = Array.isArray(tree.proof) ? tree.proof.length : 0;
+  return (
+    <View style={styles.treeSummaryCard}>
+      <Text style={styles.treeSummaryTitle}>{label}</Text>
+      <Field label="상태" value={tree.verified ? "검증 가능" : tree.reason || "대기"} />
+      <Field label="루트" value={tree.storedRoot} mono small />
+      <Field label="리프" value={tree.leafHash} mono small />
+      <Field label="경로 길이" value={proofCount ? String(proofCount) : "-"} />
     </View>
   );
 }
@@ -405,7 +426,19 @@ export default function VerifyScreen({
             <Text style={[styles.sectionLabel, { marginTop: 16 }]}>
               머클 · 배치
             </Text>
+            <MerkleTreeSummary
+              label="SHA-256 트리"
+              tree={data.merkleTrees?.sha256}
+            />
+            <MerkleTreeSummary
+              label="pHash 트리"
+              tree={data.merkleTrees?.phash}
+            />
             <MerkleTreeVizPanel state={merkleViz} />
+            <Field
+              label="현재 표시 트리"
+              value={data.merkleTreeType === "phash" ? "pHash" : "SHA-256"}
+            />
             <Field
               label="인덱스 블록"
               value={
@@ -760,5 +793,21 @@ const styles = StyleSheet.create({
   merkleVizChildHint: {
     fontSize: 11,
     color: ui.textMuted,
+  },
+  treeSummaryCard: {
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: ui.borderLight,
+    backgroundColor: ui.canvas,
+  },
+  treeSummaryTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: ui.primary,
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
 });

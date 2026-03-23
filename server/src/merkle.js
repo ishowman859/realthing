@@ -1,12 +1,15 @@
 import crypto from "node:crypto";
 
-// [각주1] 자산별 머클 리프는 해시 모드/값/식별자를 고정 포맷으로 직렬화해 생성합니다.
-export function createAssetLeafHash(asset) {
-  const mode = String(asset.mode || "");
-  const hashValue = String(asset.sha256 || asset.phash || "");
+// [각주1] 자산별 머클 리프는 트리 종류/값/식별자를 고정 포맷으로 직렬화해 생성합니다.
+export function createAssetLeafHash(asset, treeType = null) {
+  const normalizedTreeType = normalizeTreeType(treeType || asset?.mode);
+  const hashValue =
+    normalizedTreeType === "sha256"
+      ? String(asset?.sha256 || "")
+      : String(asset?.phash || "");
   const serial = String(asset.serial || "");
   const id = String(asset.id || "");
-  const payload = `${mode}|${hashValue}|${serial}|${id}`;
+  const payload = `${normalizedTreeType}|${hashValue}|${serial}|${id}`;
   return sha256Hex(payload);
 }
 
@@ -69,5 +72,9 @@ function hashPair(left, right) {
 
 function sha256Hex(input) {
   return crypto.createHash("sha256").update(input).digest("hex");
+}
+
+function normalizeTreeType(value) {
+  return String(value || "").toLowerCase() === "phash" ? "phash" : "sha256";
 }
 

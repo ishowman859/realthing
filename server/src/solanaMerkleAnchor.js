@@ -1,5 +1,5 @@
 /**
- * 분 배치 머클 루트를 Solana에 메모 인스트럭션으로 앵커합니다.
+ * 배치별 SHA-256/pHash 머클 루트를 Solana에 메모 인스트럭션으로 앵커합니다.
  * devnet / mainnet-beta / testnet — RPC URL로 구분합니다.
  */
 import fs from "fs";
@@ -85,13 +85,24 @@ export function getSolanaMerkleAnchorOptions() {
 }
 
 /**
- * @param {{ merkleRoot: string, batchId: string, rpcUrl: string, keypair: Keypair, commitment?: string }} opts
- * @returns {Promise<{ signature: string }>}
+ * @param {{ batchId: string, sha256Root?: string | null, phashRoot?: string | null, rpcUrl: string, keypair: Keypair, commitment?: string }} opts
+ * @returns {Promise<{ signature: string, payload: string }>}
  */
 export async function submitMerkleRootMemo(opts) {
-  const { merkleRoot, batchId, rpcUrl, keypair, commitment = "confirmed" } =
-    opts;
-  const payload = `verity:merkle:v1|${batchId}|${merkleRoot}`;
+  const {
+    batchId,
+    sha256Root,
+    phashRoot,
+    rpcUrl,
+    keypair,
+    commitment = "confirmed",
+  } = opts;
+  const payload = [
+    "verity:merkle:v2",
+    batchId,
+    trim(sha256Root) || "-",
+    trim(phashRoot) || "-",
+  ].join("|");
   const payloadBytes = Buffer.byteLength(payload, "utf8");
   if (payloadBytes > MEMO_MAX_BYTES) {
     throw new Error(
@@ -125,7 +136,7 @@ export async function submitMerkleRootMemo(opts) {
     { commitment, maxRetries: 5 }
   );
 
-  return { signature };
+  return { signature, payload };
 }
 
 export function solanaExplorerTxUrl(cluster, signature) {

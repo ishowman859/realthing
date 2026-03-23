@@ -53,7 +53,7 @@ const I18N = {
     verificationEyebrow: "검증",
     pageTitle: "Verity 검증 페이지",
     pageSub:
-      "검증 토큰으로 등록 기록·머클 경로를 조회합니다. 해시 등록·지갑·배치 봉인은 백엔드에서 처리됩니다.",
+      "이미지를 넣으면 SHA-256·pHash를 계산해 등록 기록을 찾습니다. 토큰·QR 링크로도 조회할 수 있습니다.",
     serialLabel: "일련번호",
     modeLabel: "모드",
     createdAtLabel: "생성 시각",
@@ -80,11 +80,20 @@ const I18N = {
       "유효한 토큰이 없습니다. 아래에 토큰을 입력하거나 QR·공유 링크로 접속하세요.",
     tokenOrUrlHint:
       "검증 토큰을 입력한 뒤 「조회」를 누르거나 /v/토큰 링크로 접속하세요.",
-    tokenSectionLabel: "검증 토큰 조회",
-    tokenHelp:
-      "미디어 해시 등록과 머클 배치는 서버·앱 API에서 처리됩니다. 이 페이지는 공개 토큰으로 기록만 조회·검증합니다.",
+    photoOrTokenHint:
+      "사진을 선택한 뒤 「등록 기록 찾기」를 누르거나, 토큰 입력·/v/토큰 링크로 접속하세요.",
+    photoSectionLabel: "사진으로 검증",
+    photoVerifyHelp:
+      "이미지를 올리면 SHA-256과 pHash를 계산해 정확 일치와 유사 이미지를 함께 조회합니다.",
+    photoVerifyButton: "등록 기록 찾기",
+    photoVerifyWorking: "SHA-256 / pHash 계산 및 조회 중…",
+    photoVerifyNeedFile: "이미지 파일을 선택하세요.",
+    hashLookupNotFound: "일치하는 SHA-256 또는 pHash 기반 등록 기록이 없습니다.",
+    tokenBlockLabel: "검증 토큰 · QR 링크",
+    tokenBlockHelp: "공유 링크의 토큰이 있으면 여기서 조회할 수 있습니다.",
+    lookupDivider: "또는",
     tokenPlaceholder: "검증 토큰 붙여넣기",
-    tokenLookupButton: "조회",
+    tokenLookupButton: "토큰 조회",
     tokenLookupWorking: "조회 중…",
     tokenLookupNeedToken: "검증 토큰을 입력하세요.",
     recheckError: "재검증 요청 중 오류",
@@ -132,7 +141,7 @@ const I18N = {
     merkleCompareFail: "로컬 파일 내용이 서버에 등록된 시점의 바이트와 다릅니다.",
     merkleCompareWrongMode: "pHash 모드에서는 파일 SHA-256 대조를 쓰지 않습니다.",
     merkleNoFile: "파일을 먼저 선택하세요.",
-    merkleNoDataYet: "토큰으로 조회하면 이웃 해시(머클 경로)가 여기 표시됩니다.",
+    merkleNoDataYet: "등록 기록을 불러오면 이웃 해시(머클 경로)가 여기 표시됩니다.",
     merkleChainTitle: "머클 트리 · 배치 머클 루트 (Solana 연동 MVP)",
     labelIndexedBlock: "인덱스 블록(분 단위 배치)",
     labelStoredRoot: "봉인된 머클 루트",
@@ -155,14 +164,23 @@ const I18N = {
     verificationEyebrow: "Verification",
     pageTitle: "Verity Verification",
     pageSub:
-      "Look up records and Merkle path by verification token. Hash ingest, wallet, and batch sealing run on the backend.",
+      "We compute SHA-256 and pHash for your image, then look up exact and similar registrations. Token / QR links still work.",
     tokenOrUrlHint:
       "Enter a token and press Look up, or open a /v/{token} link.",
-    tokenSectionLabel: "Verification token",
-    tokenHelp:
-      "Hash registration and Merkle batching use server/app APIs. This page only loads public records by token.",
+    photoOrTokenHint:
+      "Choose a photo and press Find registration, or use a token / /v/{token} link.",
+    photoSectionLabel: "Verify with a photo",
+    photoVerifyHelp:
+      "Upload an image to compute both SHA-256 and pHash, then search for exact and similar registrations.",
+    photoVerifyButton: "Find registration",
+    photoVerifyWorking: "Computing SHA-256 / pHash and searching…",
+    photoVerifyNeedFile: "Choose an image file first.",
+    hashLookupNotFound: "No registration found for this SHA-256 or pHash.",
+    tokenBlockLabel: "Token · QR link",
+    tokenBlockHelp: "If you have a share link token, look it up here.",
+    lookupDivider: "or",
     tokenPlaceholder: "Paste verification token",
-    tokenLookupButton: "Look up",
+    tokenLookupButton: "Look up by token",
     tokenLookupWorking: "Loading…",
     tokenLookupNeedToken: "Enter a verification token.",
     serialLabel: "Serial",
@@ -232,7 +250,7 @@ const I18N = {
     merkleCompareFail: "Local file bytes differ from what was registered.",
     merkleCompareWrongMode: "File SHA-256 compare is for SHA-256 mode only.",
     merkleNoFile: "Choose a file first.",
-    merkleNoDataYet: "Look up by token to load sibling hashes (Merkle path) here.",
+    merkleNoDataYet: "Load a registration to see sibling hashes (Merkle path) here.",
     merkleChainTitle: "Merkle tree · batch root (Solana MVP)",
     labelIndexedBlock: "Indexed block (minute batch)",
     labelStoredRoot: "Sealed Merkle root",
@@ -255,14 +273,23 @@ const I18N = {
     verificationEyebrow: "検証",
     pageTitle: "Verity 検証ページ",
     pageSub:
-      "検証トークンで登録記録・マークルパスを照会します。ハッシュ登録・ウォレットはバックエンドで処理されます。",
+      "ブラウザで画像の SHA-256 を計算し、登録の有無を照会します。トークン・QR リンクにも対応します。",
     tokenOrUrlHint:
       "トークンを入力して「照会」を押すか、/v/トークン のリンクで開いてください。",
-    tokenSectionLabel: "検証トークン照会",
-    tokenHelp:
-      "ハッシュ登録とマークルバッチはサーバー/APIで行います。このページは公開トークンで記録のみ表示します。",
+    photoOrTokenHint:
+      "画像を選んで登録を検索するか、トークン・/v/ リンクで開いてください。",
+    photoSectionLabel: "写真で検証",
+    photoVerifyHelp:
+      "同一バイト列なら SHA-256 は一致します。ハッシュはブラウザ内のみで計算し、サーバーは登録の照会のみ行います。",
+    photoVerifyButton: "登録を検索",
+    photoVerifyWorking: "ハッシュ計算・照会中…",
+    photoVerifyNeedFile: "画像ファイルを選んでください。",
+    hashLookupNotFound: "この SHA-256 の登録はありません。",
+    tokenBlockLabel: "検証トークン · QR",
+    tokenBlockHelp: "共有リンクのトークンがあればここで照会できます。",
+    lookupDivider: "または",
     tokenPlaceholder: "検証トークンを貼り付け",
-    tokenLookupButton: "照会",
+    tokenLookupButton: "トークンで照会",
     tokenLookupWorking: "読み込み中…",
     tokenLookupNeedToken: "検証トークンを入力してください。",
     serialLabel: "シリアル番号",
@@ -329,7 +356,7 @@ const I18N = {
     merkleCompareFail: "ローカルファイルが登録時のバイト列と異なります。",
     merkleCompareWrongMode: "pHash モードではファイル SHA-256 照合はありません。",
     merkleNoFile: "先にファイルを選んでください。",
-    merkleNoDataYet: "トークンで照会すると隣接ハッシュ（マークルパス）が表示されます。",
+    merkleNoDataYet: "登録を読み込むと隣接ハッシュ（マークルパス）が表示されます。",
     merkleChainTitle: "マークルツリー・バッチルート（Solana MVP）",
     labelIndexedBlock: "インデックスブロック（分単位バッチ）",
     labelStoredRoot: "封切られたマークルルート",
@@ -351,12 +378,21 @@ const I18N = {
     htmlTitle: "Verity 验证页面",
     verificationEyebrow: "验证",
     pageTitle: "Verity 验证页面",
-    pageSub: "通过验证令牌查询登记记录与默克尔路径。哈希登记与钱包在后台处理。",
+    pageSub: "在浏览器中计算图片 SHA-256 并查找是否已登记。仍支持令牌与 QR 链接。",
     tokenOrUrlHint: "输入令牌后点「查询」，或使用 /v/令牌 链接打开。",
-    tokenSectionLabel: "验证令牌查询",
-    tokenHelp: "哈希登记与默克尔批次由服务器/应用 API 完成；本页仅按公开令牌查询记录。",
+    photoOrTokenHint: "选择图片查找登记，或使用令牌、/v/ 链接打开。",
+    photoSectionLabel: "用照片验证",
+    photoVerifyHelp:
+      "文件字节相同则 SHA-256 相同。哈希仅在浏览器内计算，服务器只查询是否有登记。",
+    photoVerifyButton: "查找登记",
+    photoVerifyWorking: "正在计算哈希并查询…",
+    photoVerifyNeedFile: "请先选择图片文件。",
+    hashLookupNotFound: "没有与此 SHA-256 匹配的登记。",
+    tokenBlockLabel: "验证令牌 · QR 链接",
+    tokenBlockHelp: "若有分享链接中的令牌，可在此查询。",
+    lookupDivider: "或",
     tokenPlaceholder: "粘贴验证令牌",
-    tokenLookupButton: "查询",
+    tokenLookupButton: "按令牌查询",
     tokenLookupWorking: "加载中…",
     tokenLookupNeedToken: "请输入验证令牌。",
     serialLabel: "序列号",
@@ -421,7 +457,7 @@ const I18N = {
     merkleCompareFail: "本地文件与登记时的字节不一致。",
     merkleCompareWrongMode: "仅 SHA-256 模式支持文件 SHA-256 对照。",
     merkleNoFile: "请先选择文件。",
-    merkleNoDataYet: "用令牌查询后，将在此显示邻接哈希（默克尔路径）。",
+    merkleNoDataYet: "加载登记后，将在此显示邻接哈希（默克尔路径）。",
     merkleChainTitle: "默克尔树 · 批次根（Solana MVP）",
     labelIndexedBlock: "索引区块（按分钟批次）",
     labelStoredRoot: "已封存的默克尔根",
@@ -639,6 +675,14 @@ function t(key, vars = {}) {
 }
 
 let sessionToken = "";
+let lastLocalPreviewUrl = null;
+
+function revokeLocalPreview() {
+  if (lastLocalPreviewUrl) {
+    URL.revokeObjectURL(lastLocalPreviewUrl);
+    lastLocalPreviewUrl = null;
+  }
+}
 
 /** 버튼 연타·서버 1초 가드와 맞춤: 동작 종료 후에도 최소 1초 간격 */
 const BTN_COOLDOWN_MS = 1000;
@@ -655,8 +699,14 @@ function scheduleReenableButton(button, startedAt) {
 const el = {
   titleText: document.getElementById("titleText"),
   subText: document.getElementById("subText"),
-  labelLookup: document.getElementById("labelLookup"),
-  lookupHelp: document.getElementById("lookupHelp"),
+  labelPhotoVerify: document.getElementById("labelPhotoVerify"),
+  photoVerifyHelp: document.getElementById("photoVerifyHelp"),
+  verifyPhotoInput: document.getElementById("verifyPhotoInput"),
+  verifyPhotoBtn: document.getElementById("verifyPhotoBtn"),
+  verifyPhotoStatus: document.getElementById("verifyPhotoStatus"),
+  lookupDivider: document.getElementById("lookupDivider"),
+  labelTokenBlock: document.getElementById("labelTokenBlock"),
+  tokenBlockHelp: document.getElementById("tokenBlockHelp"),
   tokenInput: document.getElementById("tokenInput"),
   tokenLookupBtn: document.getElementById("tokenLookupBtn"),
   tokenLookupStatus: document.getElementById("tokenLookupStatus"),
@@ -760,8 +810,12 @@ function applyStaticI18n() {
   setText(el.recheckButton, t("recheckButton"));
   setText(el.assetEmpty, t("noImage"));
   el.assetImage.alt = t("assetAlt");
-  if (el.labelLookup) setText(el.labelLookup, t("tokenSectionLabel"));
-  if (el.lookupHelp) el.lookupHelp.textContent = t("tokenHelp");
+  if (el.labelPhotoVerify) setText(el.labelPhotoVerify, t("photoSectionLabel"));
+  if (el.photoVerifyHelp) el.photoVerifyHelp.textContent = t("photoVerifyHelp");
+  if (el.verifyPhotoBtn) setText(el.verifyPhotoBtn, t("photoVerifyButton"));
+  if (el.lookupDivider) el.lookupDivider.textContent = t("lookupDivider");
+  if (el.labelTokenBlock) setText(el.labelTokenBlock, t("tokenBlockLabel"));
+  if (el.tokenBlockHelp) el.tokenBlockHelp.textContent = t("tokenBlockHelp");
   if (el.tokenInput) el.tokenInput.placeholder = t("tokenPlaceholder");
   if (el.tokenLookupBtn) setText(el.tokenLookupBtn, t("tokenLookupButton"));
   setStatus("warn", t("loading"));
@@ -1013,6 +1067,21 @@ async function loadVerification(token) {
   return res.json();
 }
 
+async function searchVerificationByUpload(file) {
+  setStatus("warn", t("fetchingVerification"));
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_BASE}/v1/verify/search-upload`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message || t("failedLoadVerification"));
+  }
+  return res.json();
+}
+
 async function triggerRecheck(token) {
   const res = await fetch(
     `${API_BASE}/v1/verify/${encodeURIComponent(token)}/recheck`,
@@ -1041,7 +1110,12 @@ function render(data) {
   updateMonitorAlert(data);
 
   if (data.assetUrl) {
+    revokeLocalPreview();
     el.assetImage.src = data.assetUrl;
+    el.assetImage.style.display = "block";
+    el.assetEmpty.style.display = "none";
+  } else if (lastLocalPreviewUrl) {
+    el.assetImage.src = lastLocalPreviewUrl;
     el.assetImage.style.display = "block";
     el.assetEmpty.style.display = "none";
   } else {
@@ -1087,6 +1161,7 @@ function bindTokenLookup() {
       status.textContent = t("tokenLookupWorking");
     }
     try {
+      revokeLocalPreview();
       sessionToken = tok;
       const data = await loadVerification(tok);
       render(data);
@@ -1110,6 +1185,68 @@ function bindTokenLookup() {
   input.addEventListener("keydown", (e) => {
     if (e.key === "Enter") run();
   });
+}
+
+function bindPhotoVerify() {
+  const btn = el.verifyPhotoBtn;
+  const input = el.verifyPhotoInput;
+  const status = el.verifyPhotoStatus;
+  if (!btn || !input) return;
+
+  const run = async () => {
+    if (!API_BASE) {
+      alert(__verityStaticPages ? t("githubPagesNeedApi") : t("loadFail"));
+      return;
+    }
+    const file = input.files?.[0];
+    if (!file) {
+      alert(t("photoVerifyNeedFile"));
+      return;
+    }
+    if (!window.isSecureContext || !window.crypto?.subtle) {
+      alert(t("merkleVerifyNeedCrypto"));
+      return;
+    }
+    if (btn.disabled) return;
+    btn.disabled = true;
+    const t0 = Date.now();
+    if (status) {
+      status.style.display = "block";
+      status.textContent = t("photoVerifyWorking");
+    }
+    try {
+      const result = await searchVerificationByUpload(file);
+      const data = result?.verification || null;
+      revokeLocalPreview();
+      lastLocalPreviewUrl = URL.createObjectURL(file);
+      if (!data) {
+        const score =
+          typeof result?.bestPhashScore === "number"
+            ? ` (best pHash ${result.bestPhashScore}%)`
+            : "";
+        throw new Error(`등록 기록을 찾지 못했습니다${score}`);
+      }
+      sessionToken = data.token || "";
+      if (el.tokenInput && sessionToken) el.tokenInput.value = sessionToken;
+      render(data);
+      if (status) {
+        status.textContent = "";
+        status.style.display = "none";
+      }
+    } catch (err) {
+      revokeLocalPreview();
+      if (status) {
+        status.textContent = err.message || t("loadFail");
+        status.style.display = "block";
+      }
+      setStatus("bad", err.message || t("loadFail"));
+      renderMerkleStub();
+    } finally {
+      scheduleReenableButton(btn, t0);
+    }
+  };
+
+  btn.addEventListener("click", run);
 }
 
 function bindRecheck() {
@@ -1138,6 +1275,7 @@ async function main() {
   applyStaticI18n();
   sessionToken = getTokenFromUrl();
   if (el.tokenInput && sessionToken) el.tokenInput.value = sessionToken;
+  bindPhotoVerify();
   bindTokenLookup();
 
   if (!API_BASE) {
@@ -1153,6 +1291,7 @@ async function main() {
 
   if (sessionToken) {
     try {
+      revokeLocalPreview();
       const data = await loadVerification(sessionToken);
       render(data);
     } catch (err) {
@@ -1160,7 +1299,7 @@ async function main() {
       renderMerkleStub();
     }
   } else {
-    setStatus("warn", t("tokenOrUrlHint"));
+    setStatus("warn", t("photoOrTokenHint"));
     renderMerkleStub();
   }
 }

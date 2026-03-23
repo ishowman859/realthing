@@ -21,6 +21,10 @@ CREATE TABLE IF NOT EXISTS assets (
   indexed_block_number BIGINT,
   merkle_leaf_hash TEXT,
   merkle_proof_json JSONB,
+  sha256_merkle_leaf_hash TEXT,
+  sha256_merkle_proof_json JSONB,
+  phash_merkle_leaf_hash TEXT,
+  phash_merkle_proof_json JSONB,
   ai_risk_score INTEGER,
   metadata_json JSONB,
   chain_tx_signature TEXT,
@@ -60,6 +64,9 @@ CREATE TABLE IF NOT EXISTS onchain_minute_batches (
   tx_hash TEXT,
   block_number BIGINT UNIQUE,
   merkle_root TEXT,
+  sha256_merkle_root TEXT,
+  phash_merkle_root TEXT,
+  merkle_anchor_payload_json JSONB,
   onchain_timestamp_ms BIGINT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   sent_at TIMESTAMPTZ,
@@ -81,7 +88,14 @@ ALTER TABLE assets ADD COLUMN IF NOT EXISTS batch_id UUID;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS indexed_block_number BIGINT;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS merkle_leaf_hash TEXT;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS merkle_proof_json JSONB;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS sha256_merkle_leaf_hash TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS sha256_merkle_proof_json JSONB;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS phash_merkle_leaf_hash TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS phash_merkle_proof_json JSONB;
 ALTER TABLE onchain_minute_batches ADD COLUMN IF NOT EXISTS block_number BIGINT;
+ALTER TABLE onchain_minute_batches ADD COLUMN IF NOT EXISTS sha256_merkle_root TEXT;
+ALTER TABLE onchain_minute_batches ADD COLUMN IF NOT EXISTS phash_merkle_root TEXT;
+ALTER TABLE onchain_minute_batches ADD COLUMN IF NOT EXISTS merkle_anchor_payload_json JSONB;
 
 -- 분당 여러 배치 세그먼트(segment): 세그먼트당 최대 6만 건, 5만 건 도달 시 다음 세그먼트 선생성(서버 로직)
 ALTER TABLE onchain_minute_batches ADD COLUMN IF NOT EXISTS segment INTEGER NOT NULL DEFAULT 0;

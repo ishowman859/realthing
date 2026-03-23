@@ -187,7 +187,7 @@ export async function stampHashProofWatermark(
     ty += lineH;
   }
 
-  const encoded = jpeg.encode({ data: rgba, width, height }, 88);
+  const encoded = (jpeg as any).encode({ data: rgba, width, height }, 88);
   const outBase64 = Buffer.from(encoded.data).toString("base64");
   const outPath = `${FileSystem.cacheDirectory}verity-hash-proof-${Date.now()}.jpg`;
   await FileSystem.writeAsStringAsync(outPath, outBase64, {
