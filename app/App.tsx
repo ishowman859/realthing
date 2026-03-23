@@ -1,15 +1,27 @@
 import "./src/polyfills";
 import React, { useState } from "react";
 import { Alert } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import HomeScreen from "./src/screens/HomeScreen";
 import CameraScreen from "./src/screens/CameraScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
 import { useWallet } from "./src/hooks/useWallet";
 import { useVerityHash } from "./src/hooks/useVerityHash";
+import { AppErrorBoundary } from "./src/AppErrorBoundary";
 
 type Screen = "home" | "camera" | "history";
 
 export default function App() {
+  return (
+    <AppErrorBoundary>
+      <SafeAreaProvider>
+        <AppInner />
+      </SafeAreaProvider>
+    </AppErrorBoundary>
+  );
+}
+
+function AppInner() {
   const [currentScreen, setCurrentScreen] = useState<Screen>("home");
 
   const wallet = useWallet();

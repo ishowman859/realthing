@@ -6,8 +6,6 @@ import {
   SystemProgram,
 } from "@solana/web3.js";
 
-import idl from "../idl/photo_hash.json";
-
 export const PROGRAM_ID = new PublicKey(
   "PHotohash111111111111111111111111111111111"
 );
