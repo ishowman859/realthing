@@ -26,7 +26,10 @@
       },
       "package": "com.verity.app",
       "permissions": [
-        "CAMERA"
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "WRITE_EXTERNAL_STORAGE"
       ]
     },
     "plugins": [
@@ -36,11 +39,19 @@
           "cameraPermission": "사진 촬영 후 pHash를 블록체인에 등록하기 위해 카메라 접근이 필요합니다."
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "검증 해시가 표시된 촬영본을 사진 보관함에 저장합니다.",
+          "savePhotosPermission": "검증 해시가 표시된 촬영본을 사진 보관함에 저장합니다.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
     ],
     "extra": {
       "verityApiUrl": "http://98.84.127.220:4000",
-      "verityOwnerAddress": ""
+      "verityOwnerAddress": "demo-owner"
     }
   }
 }

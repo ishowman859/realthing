@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import {
   StatusBar,
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
+import * as MediaLibrary from "expo-media-library";
 import { Ionicons } from "@expo/vector-icons";
 import { RegistrationStatus } from "../hooks/useVerityHash";
 import {
@@ -85,6 +86,8 @@ export default function CameraScreen({
 }: CameraScreenProps) {
   const cameraRef = useRef<CameraView>(null);
   const lastRegisterAtRef = useRef(0);
+  /** 동일 촬영·해시 조합으로 갤러리에 한 번만 저장 (Strict Mode 이중 effect 방지) */
+  const lastLibrarySaveKeyRef = useRef<string | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [captureContext, setCaptureContext] = useState<CaptureContext | null>(null);
@@ -96,6 +99,52 @@ export default function CameraScreen({
   const [selectedShareVariant, setSelectedShareVariant] =
     useState<ShareVariant>("proved");
   const [monitorCaptureMode, setMonitorCaptureMode] = useState(false);
+
+  useEffect(() => {
+    if (status !== "success" || !capturedUri) return;
+    const sha = currentSha256?.trim();
+    const ph = currentPhash?.trim();
+    if (!sha && !ph) return;
+
+    const dedupeKey = `${capturedUri}|${sha ?? ""}|${ph ?? ""}`;
+    if (lastLibrarySaveKeyRef.current === dedupeKey) return;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        let outUri = capturedUri;
+        try {
+          outUri = await stampHashProofWatermark(capturedUri, {
+            sha256: sha || null,
+            phash: ph || null,
+          });
+        } catch {
+          /* 해시 오버레이 실패 시 원본 저장 */
+        }
+        const perm = await MediaLibrary.requestPermissionsAsync();
+        if (cancelled) return;
+        if (perm.status !== "granted") {
+          Alert.alert(
+            "사진 보관함",
+            "검증 해시가 박힌 촬영본을 저장하려면 사진 라이브러리 접근을 허용해 주세요."
+          );
+          return;
+        }
+        await MediaLibrary.saveToLibraryAsync(outUri);
+        if (!cancelled) lastLibrarySaveKeyRef.current = dedupeKey;
+      } catch (e) {
+        if (!cancelled) {
+          console.warn("saveToLibraryAsync", e);
+          Alert.alert("저장 실패", "사진 보관함에 저장하지 못했습니다.");
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [status, capturedUri, currentSha256, currentPhash]);
 
   if (!permission) {
     return (
@@ -249,6 +298,7 @@ export default function CameraScreen({
   };
 
   const handleRetake = () => {
+    lastLibrarySaveKeyRef.current = null;
     setCapturedUri(null);
     setFilterResult(null);
     setIsAnalyzing(false);
@@ -425,6 +475,12 @@ export default function CameraScreen({
                   등록 모드: {hashMode === "sha256" ? "SHA-256" : "pHash"}
                 </Text>
               )}
+              {status === "success" && (currentSha256 || currentPhash) ? (
+                <Text style={styles.saveHintText}>
+                  하단에 SHA-256·pHash를 박은 촬영본을 사진 보관함에 자동 저장합니다.
+                  (접근 권한을 허용해 주세요.)
+                </Text>
+              ) : null}
 
               {currentPhash && (
                 <View style={styles.hashContainer}>
@@ -876,6 +932,14 @@ const styles = StyleSheet.create({
     color: ui.textSecondary,
     fontSize: 13,
     marginTop: 4,
+  },
+  saveHintText: {
+    color: ui.textSecondary,
+    fontSize: 12,
+    marginTop: 10,
+    lineHeight: 17,
+    textAlign: "center",
+    paddingHorizontal: 12,
   },
   hashContainer: {
     marginTop: 12,
