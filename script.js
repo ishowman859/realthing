@@ -13,8 +13,22 @@ const __verityStaticPages =
   /\.github\.io$/i.test(window.location.hostname) ||
   document.querySelector('meta[name="verity-gh-pages"]')?.getAttribute("content") === "1";
 const __host = window.location.hostname;
+let API_BASE_ERROR = "";
+function buildHttpVerifyRedirectTarget() {
+  const path = typeof window !== "undefined" ? window.location.pathname : "";
+  const normalizedPath = String(path || "");
+  let targetPath = "/verify";
+  if (/^\/v\/[^/]+/i.test(normalizedPath)) {
+    targetPath = normalizedPath;
+  } else if (/^\/v(?:\/)?$/i.test(normalizedPath)) {
+    targetPath = "/v";
+  } else if (/^\/verify(?:\/)?$/i.test(normalizedPath)) {
+    targetPath = "/verify";
+  }
+  return `${DEFAULT_VERITY_PUBLIC_API}${targetPath}`;
+}
 
-/** GitHub Pages 등 HTTPS 페이지에서는 meta의 http:// API를 무시 (?api= 또는 VERITY_PAGES_API 권장) */
+/** HTTPS 페이지에서는 meta의 http:// API를 무시 (?api= 또는 VERITY_PAGES_API 권장) */
 function __apiMetaForSecureSite() {
   if (!__apiFromMeta) return "";
   if (typeof window !== "undefined" && window.location.protocol === "https:") {
@@ -36,6 +50,23 @@ function __normalizeApiBase(b) {
   return String(b).trim().replace(/\/+$/, "");
 }
 
+function maybeRedirectToHttpVerifyPage() {
+  if (typeof window === "undefined") return false;
+  if (window.location.protocol !== "https:") return false;
+  if (window.__VERITY_API_BASE__ || __apiFromQuery) return false;
+  if (__apiMetaForSecureSite()) return false;
+  if (!/^http:\/\//i.test(DEFAULT_VERITY_PUBLIC_API)) return false;
+
+  const target = new URL(buildHttpVerifyRedirectTarget());
+  const currentParams = new URLSearchParams(window.location.search);
+  for (const [key, value] of currentParams.entries()) {
+    if (key === "api") continue;
+    target.searchParams.set(key, value);
+  }
+  window.location.replace(target.toString());
+  return true;
+}
+
 const API_BASE = __normalizeApiBase(
   window.__VERITY_API_BASE__ ||
     __apiFromQuery ||
@@ -47,20 +78,29 @@ const API_BASE = __normalizeApiBase(
         : __apiFromMeta || DEFAULT_VERITY_PUBLIC_API)
 );
 
+if (
+  typeof window !== "undefined" &&
+  window.location.protocol === "https:" &&
+  /^http:\/\//i.test(API_BASE)
+) {
+  API_BASE_ERROR =
+    "HTTPS 페이지에서는 HTTP 백엔드를 호출할 수 없습니다. 지금 백엔드가 HTTP(98.84.127.220:4000)만 열려 있어서 브라우저가 fetch를 차단합니다.";
+}
+
 const I18N = {
   ko: {
     htmlTitle: "Verity 검증 페이지",
     verificationEyebrow: "검증",
     pageTitle: "Verity 검증 페이지",
     pageSub:
-      "사진을 업로드하면 백엔드가 SHA-256·pHash를 계산하고 인덱싱된 등록 기록을 찾아 보여줍니다.",
+      "사진을 올리면 브라우저가 SHA-256·pHash를 계산하고, 서버는 해시만 받아 인덱싱된 등록 기록을 찾아 보여줍니다.",
     serialLabel: "일련번호",
     modeLabel: "모드",
     createdAtLabel: "생성 시각",
     capturedAtLabel: "촬영 시각(기기)",
     onchainAtLabel: "온체인 시각",
     ownerLabel: "소유자",
-    riskScoreLabel: "AI 1차 점수",
+    locationLabel: "위치 요약",
     hashInfoLabel: "해시 정보",
     originalFileLabel: "원본 파일",
     actionsLabel: "검증 액션",
@@ -90,7 +130,7 @@ const I18N = {
     photoVerifyNeedFile: "이미지 파일을 선택하세요.",
     hashLookupNotFound: "일치하는 SHA-256 또는 pHash 기반 등록 기록이 없습니다.",
     tokenBlockLabel: "백엔드 해시 검색",
-    tokenBlockHelp: "업로드한 이미지를 서버가 직접 해시 계산한 뒤 인덱싱된 기록을 찾습니다.",
+      tokenBlockHelp: "이미지 해시는 브라우저에서 계산하고 서버는 해시 기반 조회만 수행합니다.",
     lookupDivider: "",
     tokenPlaceholder: "",
     tokenLookupButton: "",
@@ -100,6 +140,8 @@ const I18N = {
     loadFail: "조회 실패",
     githubPagesNeedApi:
       "API 주소가 없습니다. 저장소 Actions 변수 VERITY_PAGES_API(HTTPS 백엔드)를 설정하거나, URL에 ?api=https://백엔드주소 를 붙이세요.",
+    httpsHttpBlocked:
+      "HTTPS 페이지에서는 HTTP 백엔드를 호출할 수 없습니다. 현재 백엔드는 http://98.84.127.220:4000 이고, GitHub Pages 같은 HTTPS 페이지에서는 브라우저가 fetch를 막습니다.",
     uploadSectionLabel: "미디어 업로드",
     uploadHelp:
       "사진 또는 동영상을 올리면 서버가 해시를 계산하고 등록한 뒤 아래에 검증 결과를 표시합니다.",
@@ -164,11 +206,11 @@ const I18N = {
     verificationEyebrow: "Verification",
     pageTitle: "Verity Verification",
     pageSub:
-      "Upload a photo and the backend computes SHA-256 and pHash to find indexed registrations.",
+        "Upload a photo and the browser computes SHA-256 and pHash before asking the server to search the indexed registrations.",
     tokenOrUrlHint:
       "Upload a photo and the backend will hash it to find indexed registrations.",
     photoOrTokenHint:
-      "Choose a photo and press Find registration. The backend computes hashes and searches the index.",
+        "Choose a photo and press Find registration. The browser computes the hashes and the server searches the index.",
     photoSectionLabel: "Verify with a photo",
     photoVerifyHelp:
       "Upload an image to compute both SHA-256 and pHash, then search for exact and similar registrations.",
@@ -177,7 +219,7 @@ const I18N = {
     photoVerifyNeedFile: "Choose an image file first.",
     hashLookupNotFound: "No registration found for this SHA-256 or pHash.",
     tokenBlockLabel: "Backend hash search",
-    tokenBlockHelp: "The server hashes the uploaded image and searches the indexed records.",
+      tokenBlockHelp: "The browser hashes the image and the server only performs a hash lookup.",
     lookupDivider: "",
     tokenPlaceholder: "",
     tokenLookupButton: "",
@@ -189,7 +231,7 @@ const I18N = {
     capturedAtLabel: "Captured At (Device)",
     onchainAtLabel: "On-chain Time",
     ownerLabel: "Owner",
-    riskScoreLabel: "AI Risk Score",
+    locationLabel: "Location",
     hashInfoLabel: "Hash Info",
     originalFileLabel: "Original File",
     actionsLabel: "Verification Actions",
@@ -210,6 +252,8 @@ const I18N = {
     loadFail: "Failed to load",
     githubPagesNeedApi:
       "On GitHub Pages, set the API URL: add ?api=https://your-api-host to the URL.",
+    httpsHttpBlocked:
+      "This HTTPS page cannot call an HTTP backend. The current backend is http://98.84.127.220:4000, so the browser blocks the fetch.",
     uploadSectionLabel: "Upload media",
     uploadHelp:
       "Upload a photo or video: the server computes hashes, registers the asset, and shows verification below.",
@@ -298,7 +342,7 @@ const I18N = {
     capturedAtLabel: "撮影時刻 (端末)",
     onchainAtLabel: "オンチェーン時刻",
     ownerLabel: "所有者",
-    riskScoreLabel: "AI 一次スコア",
+    locationLabel: "位置要約",
     hashInfoLabel: "ハッシュ情報",
     originalFileLabel: "原本ファイル",
     actionsLabel: "検証アクション",
@@ -320,6 +364,8 @@ const I18N = {
     loadFail: "取得失敗",
     githubPagesNeedApi:
       "API の URL がありません。リポジトリの Actions 変数 VERITY_PAGES_API（HTTPS）を設定するか、?api=https://バックエンド を付けてください。",
+    httpsHttpBlocked:
+      "HTTPS ページから HTTP バックエンドは呼べません。現在のバックエンドは http://98.84.127.220:4000 のため、ブラウザが fetch を遮断します。",
     uploadSectionLabel: "メディアアップロード",
     uploadHelp: "写真または動画を送ると、サーバーがハッシュを計算して登録し、下に検証結果を表示します。",
     uploadButtonLabel: "アップロードして登録",
@@ -401,7 +447,7 @@ const I18N = {
     capturedAtLabel: "拍摄时间（设备）",
     onchainAtLabel: "链上时间",
     ownerLabel: "所有者",
-    riskScoreLabel: "AI 风险分数",
+    locationLabel: "位置摘要",
     hashInfoLabel: "哈希信息",
     originalFileLabel: "原始文件",
     actionsLabel: "验证操作",
@@ -422,6 +468,8 @@ const I18N = {
     loadFail: "加载失败",
     githubPagesNeedApi:
       "缺少 API 地址：请设置仓库 Actions 变量 VERITY_PAGES_API（HTTPS），或在 URL 加上 ?api=https://你的后端",
+    httpsHttpBlocked:
+      "HTTPS 页面不能调用 HTTP 后端。当前后端是 http://98.84.127.220:4000，因此浏览器会阻止 fetch。",
     uploadSectionLabel: "上传媒体",
     uploadHelp: "上传照片或视频后，服务器会计算哈希并注册，在下方显示验证结果。",
     uploadButtonLabel: "上传并登记",
@@ -508,6 +556,87 @@ async function sha256HexBuffer(buffer) {
   return Array.from(new Uint8Array(buf))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+async function loadImageBitmapFromFile(file) {
+  if (typeof createImageBitmap === "function") {
+    try {
+      return await createImageBitmap(file);
+    } catch {
+      // fall through to img element path
+    }
+  }
+
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("이미지를 읽지 못했습니다."));
+      el.src = url;
+    });
+    return img;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function computeBrowserImagePhash(file) {
+  const source = await loadImageBitmapFromFile(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = 32;
+  canvas.height = 32;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("브라우저 캔버스를 초기화하지 못했습니다.");
+  ctx.drawImage(source, 0, 0, 32, 32);
+  const { data } = ctx.getImageData(0, 0, 32, 32);
+  const matrix = [];
+  for (let y = 0; y < 32; y += 1) {
+    const row = [];
+    for (let x = 0; x < 32; x += 1) {
+      const idx = (y * 32 + x) * 4;
+      const gray = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+      row.push(gray);
+    }
+    matrix.push(row);
+  }
+
+  const dct = [];
+  for (let u = 0; u < 32; u += 1) {
+    dct[u] = [];
+    for (let v = 0; v < 32; v += 1) {
+      let sum = 0;
+      for (let x = 0; x < 32; x += 1) {
+        for (let y = 0; y < 32; y += 1) {
+          sum +=
+            matrix[x][y] *
+            Math.cos(((2 * x + 1) * u * Math.PI) / 64) *
+            Math.cos(((2 * y + 1) * v * Math.PI) / 64);
+        }
+      }
+      const cu = u === 0 ? 1 / Math.sqrt(2) : 1;
+      const cv = v === 0 ? 1 / Math.sqrt(2) : 1;
+      dct[u][v] = (cu * cv * sum) / 16;
+    }
+  }
+
+  const lowFreq = [];
+  for (let i = 0; i < 8; i += 1) {
+    for (let j = 0; j < 8; j += 1) {
+      if (i === 0 && j === 0) continue;
+      lowFreq.push(dct[i][j]);
+    }
+  }
+  const avg = lowFreq.reduce((sum, value) => sum + value, 0) / lowFreq.length;
+  let bits = lowFreq.map((value) => (value > avg ? "1" : "0")).join("");
+  while (bits.length < 64) bits += "0";
+  bits = bits.slice(0, 64);
+
+  let hex = "";
+  for (let i = 0; i < 64; i += 4) {
+    hex += parseInt(bits.slice(i, i + 4), 2).toString(16);
+  }
+  return hex;
 }
 
 async function createClientLeafHash(v) {
@@ -715,8 +844,11 @@ const el = {
   labelCapturedAt: document.getElementById("labelCapturedAt"),
   labelOnchainAt: document.getElementById("labelOnchainAt"),
   labelOwner: document.getElementById("labelOwner"),
-  labelRiskScore: document.getElementById("labelRiskScore"),
+  labelLocation: document.getElementById("labelLocation"),
   labelHashInfo: document.getElementById("labelHashInfo"),
+  locationSummary: document.getElementById("locationSummary"),
+  gpsVal: document.getElementById("gpsVal"),
+  metadataVal: document.getElementById("metadataVal"),
   labelOriginalFile: document.getElementById("labelOriginalFile"),
   statusBadge: document.getElementById("statusBadge"),
   mode: document.getElementById("mode"),
@@ -725,7 +857,6 @@ const el = {
   onchainAt: document.getElementById("onchainAt"),
   owner: document.getElementById("owner"),
   serial: document.getElementById("serial"),
-  riskScore: document.getElementById("riskScore"),
   monitorAlert: document.getElementById("monitorAlert"),
   sha256: document.getElementById("sha256"),
   phash: document.getElementById("phash"),
@@ -807,7 +938,7 @@ function applyStaticI18n() {
   setText(el.labelCapturedAt, t("capturedAtLabel"));
   setText(el.labelOnchainAt, t("onchainAtLabel"));
   setText(el.labelOwner, t("ownerLabel"));
-  setText(el.labelRiskScore, t("riskScoreLabel"));
+  setText(el.labelLocation, t("locationLabel"));
   setText(el.labelHashInfo, t("hashInfoLabel"));
   setText(el.labelOriginalFile, t("originalFileLabel"));
   setText(el.labelActions, t("actionsLabel"));
@@ -840,16 +971,9 @@ function formatDateTime(value) {
 }
 
 function updateMonitorAlert(data) {
-  const risk = typeof data.aiRiskScore === "number" ? data.aiRiskScore : null;
-  const isMonitorSuspected = risk !== null && risk >= 35;
-  if (!isMonitorSuspected) {
-    el.monitorAlert.style.display = "none";
-    el.monitorAlert.textContent = "";
-    return;
-  }
-  const lang = alerts[ACTIVE_LANG] ? ACTIVE_LANG : "en";
-  el.monitorAlert.textContent = alerts[lang];
-  el.monitorAlert.style.display = "block";
+  if (!el.monitorAlert) return;
+  el.monitorAlert.style.display = "none";
+  el.monitorAlert.textContent = "";
 }
 
 function setStatus(type, text) {
@@ -940,21 +1064,22 @@ function renderSearchMeta(result) {
   }
 
   el.searchMeta.hidden = false;
-  const exactType =
-    result.exactMatchType === "phash"
-      ? "pHash exact match"
-      : result.exactMatchType === "sha256"
-        ? "SHA-256 exact match"
-        : "No exact match";
-  const bestScore =
-    typeof result.bestPhashScore === "number"
-      ? `, best pHash similarity ${result.bestPhashScore}%`
-      : "";
-  el.searchMetaSummary.textContent = `${exactType}${bestScore}`;
+  let summary = "SHA-256 exact match 없음";
+  if (result?.exactMatchType === "sha256") {
+    summary = "SHA-256 exact match · 100% 일치";
+  } else if (result?.exactPhashMatch) {
+    summary = "pHash exact match · 유사 판정";
+  } else if (typeof result?.bestPhashScore === "number") {
+    summary = `pHash 유사 후보 · ${Number(result.bestPhashScore).toFixed(2)}%`;
+  }
+  el.searchMetaSummary.textContent = summary;
 
   const parts = [];
   if (result.query?.sha256) parts.push(`SHA-256: ${result.query.sha256}`);
   if (result.query?.phash) parts.push(`pHash: ${result.query.phash}`);
+  if (result?.exactPhashMatch?.serial) {
+    parts.push(`pHash exact serial: ${result.exactPhashMatch.serial}`);
+  }
   el.searchMetaHashes.textContent = parts.join("\n");
 
   const similar = Array.isArray(result.similarMatches) ? result.similarMatches : [];
@@ -966,8 +1091,11 @@ function renderSearchMeta(result) {
   }
   el.similarMatchesWrap.hidden = false;
   similar.forEach((item) => {
+    if (!item) return;
     const li = document.createElement("li");
-    li.textContent = `${item.score}% · ${item.serial || "-"} · ${item.owner || "-"}`;
+    const score =
+      typeof item.score === "number" ? item.score.toFixed(2) : String(item.score || "-");
+    li.textContent = `${score}% · ${item.serial || "-"} · ${item.owner || "-"}`;
     el.similarMatchesList.appendChild(li);
   });
 }
@@ -1143,13 +1271,25 @@ function bindMerkle() {
   }
 }
 
-async function searchVerificationByUpload(file) {
+async function searchVerificationByHashes(file) {
   setStatus("warn", t("fetchingVerification"));
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch(`${API_BASE}/v1/verify/search-upload`, {
+  const sha256 = await sha256HexBuffer(await file.arrayBuffer());
+  let phash = null;
+  try {
+    phash = await computeBrowserImagePhash(file);
+  } catch (err) {
+    console.warn("pHash compute failed; continuing with SHA-256 only", err);
+  }
+  const res = await fetch(`${API_BASE}/v1/verify/search-hashes`, {
     method: "POST",
-    body: formData,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sha256,
+      phash,
+      mediaType: "photo",
+      fileName: file.name || null,
+      mimeType: file.type || null,
+    }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -1171,9 +1311,22 @@ function render(data) {
     data.onchainTimestampMs ? formatDateTime(Number(data.onchainTimestampMs)) : "-"
   );
   setText(el.owner, data.owner || "-");
-  setText(el.riskScore, typeof data.aiRiskScore === "number" ? `${data.aiRiskScore} / 100` : "-");
+  setText(el.locationSummary, data.locationSummary || "-");
   setText(el.sha256, data.sha256 || "-");
   setText(el.phash, data.phash || "-");
+  if (el.gpsVal) {
+    const lat = Number(data?.gps?.lat);
+    const lng = Number(data?.gps?.lng);
+    el.gpsVal.textContent =
+      Number.isFinite(lat) && Number.isFinite(lng)
+        ? `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+        : "-";
+  }
+  if (el.metadataVal) {
+    el.metadataVal.textContent = data.metadata
+      ? JSON.stringify(data.metadata, null, 2)
+      : "-";
+  }
   updateMonitorAlert(data);
 
   if (data.assetUrl) {
@@ -1211,6 +1364,11 @@ function bindPhotoVerify() {
   if (!btn || !input) return;
 
   const run = async () => {
+    if (API_BASE_ERROR) {
+      alert(t("httpsHttpBlocked"));
+      setStatus("bad", t("httpsHttpBlocked"));
+      return;
+    }
     if (!API_BASE) {
       alert(__verityStaticPages ? t("githubPagesNeedApi") : t("loadFail"));
       return;
@@ -1228,7 +1386,7 @@ function bindPhotoVerify() {
       status.textContent = t("photoVerifyWorking");
     }
     try {
-      const result = await searchVerificationByUpload(file);
+      const result = await searchVerificationByHashes(file);
       const data = result?.verification || null;
       revokeLocalPreview();
       lastLocalPreviewUrl = URL.createObjectURL(file);
@@ -1236,7 +1394,7 @@ function bindPhotoVerify() {
       if (!data) {
         const score =
           typeof result?.bestPhashScore === "number"
-            ? ` (best pHash ${result.bestPhashScore}%)`
+            ? ` (best pHash ${Number(result.bestPhashScore).toFixed(2)}%)`
             : "";
         if (status) {
           status.textContent = `등록 기록을 찾지 못했습니다${score}`;
@@ -1252,12 +1410,13 @@ function bindPhotoVerify() {
         status.style.display = "none";
       }
     } catch (err) {
+      const message = err instanceof Error ? err.message : t("loadFail");
       revokeLocalPreview();
       if (status) {
-        status.textContent = err.message || t("loadFail");
+        status.textContent = message;
         status.style.display = "block";
       }
-      setStatus("bad", err.message || t("loadFail"));
+      setStatus("bad", message);
       renderMerkleStub();
     } finally {
       scheduleReenableButton(btn, t0);
@@ -1268,12 +1427,18 @@ function bindPhotoVerify() {
 }
 
 async function main() {
+  if (maybeRedirectToHttpVerifyPage()) return;
   initBranding();
   applyStaticI18n();
   bindPhotoVerify();
 
   if (!API_BASE) {
     setStatus("bad", __verityStaticPages ? t("githubPagesNeedApi") : t("loadFail"));
+    if (el.merkleCard) el.merkleCard.style.display = "none";
+    return;
+  }
+  if (API_BASE_ERROR) {
+    setStatus("bad", t("httpsHttpBlocked"));
     if (el.merkleCard) el.merkleCard.style.display = "none";
     return;
   }

@@ -109,28 +109,41 @@
             <div id="labelOwner" class="label">소유자</div>
             <div id="owner" class="value mono">-</div>
           </div>
-          <div class="field field--wide">
-            <div id="labelRiskScore" class="label">AI 1차 점수</div>
-            <div id="riskScore" class="value">-</div>
+          <div class="field">
+            <div id="labelLocation" class="label">위치 요약</div>
+            <div id="locationSummary" class="value">-</div>
           </div>
         </div>
       </section>
 
       <section class="card card--glass">
-        <div id="labelHashInfo" class="label label--section">해시 정보</div>
-        <div class="grid">
-          <div class="field">
-            <div class="label">SHA-256</div>
-            <div id="sha256" class="value mono value--hash">-</div>
+        <details class="details-block">
+          <summary class="details-summary">자세히 보기</summary>
+          <div id="labelHashInfo" class="label label--section">해시 정보</div>
+          <div class="grid">
+            <div class="field">
+              <div class="label">SHA-256</div>
+              <div id="sha256" class="value mono value--hash">-</div>
+            </div>
+            <div class="field">
+              <div class="label">pHash</div>
+              <div id="phash" class="value mono value--hash">-</div>
+            </div>
           </div>
-          <div class="field">
-            <div class="label">pHash</div>
-            <div id="phash" class="value mono value--hash">-</div>
+          <div class="label label--section" style="margin-top:16px;">메타데이터</div>
+          <div class="grid">
+            <div class="field">
+              <div class="label">원본 좌표</div>
+              <div id="gpsVal" class="value mono">-</div>
+            </div>
           </div>
-        </div>
+          <pre id="metadataVal" class="merkle-anchor-payload mono">-</pre>
+        </details>
       </section>
 
       <section class="card card--glass card--merkle" id="merkleCard">
+        <details class="details-block">
+        <summary class="details-summary">루트 · 앵커 자세히 보기</summary>
         <div id="labelMerkleSection" class="label label--section">머클 경로 검증</div>
         <div id="merkleChainPanel" class="merkle-chain-panel" hidden>
           <div id="merkleChainTitle" class="merkle-chain-title"></div>
@@ -208,6 +221,7 @@
             <p id="merkleCompareResult" class="merkle-verify-result" role="status"></p>
           </div>
         </div>
+        </details>
       </section>
 
       <section class="card card--glass">
@@ -220,6 +234,6 @@
 
     </main>
 
-    <script src="script.js?v=10" defer></script>
+    <script src="script.js?v=13" defer></script>
   </body>
 </html>
