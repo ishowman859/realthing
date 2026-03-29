@@ -52,7 +52,7 @@
           <div>
             <div id="labelPhotoVerify" class="label">사진으로 검증</div>
             <p id="photoVerifyHelp" class="card__lead">
-              원본과 동일한 바이트의 사진이면 SHA-256이 일치합니다. 브라우저에서만 해시를 계산한 뒤 서버에 등록 여부를 묻습니다.
+              원본과 동일한 바이트의 사진이면 SHA-256이 일치합니다. 브라우저에서만 해시를 계산한 뒤 서버에 등록 여부를 묻습니다. 인코딩·재저장 때문에 pHash가 100%가 아니고 SHA-256이 일치하지 않을 수 있으며, pHash 90% 전후도 신뢰 범위로 봅니다.
             </p>
           </div>
         </div>

@@ -1,6 +1,9 @@
 import * as FileSystem from "expo-file-system";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
+import { computePhash, computeSha256 } from "./phash";
+import { standardizePhotoForHashing } from "./standardizePhoto";
+import { extractVideoPhashKeyframes } from "./videoPhash";
 
 export type HashMode = "sha256" | "phash";
 export type MediaType = "photo" | "video";
@@ -68,10 +71,10 @@ export interface AntiSpoofResult {
 const STORAGE_FILE = `${FileSystem.documentDirectory}verity-assets.json`;
 
 /**
- * 릴리스 APK에서 `Constants.expoConfig`가 비는 경우가 있어, extra가 없어도 항상 쓸 기본 API.
- * 로컬 개발: app.json extra / EXPO_PUBLIC_VERITY_API_URL / 에뮬레이터 localhost 치환.
+ * 릴리스 빌드에서 `Constants.expoConfig`가 비는 경우가 있어, extra가 없어도 항상 쓸 기본 API.
+ * 운영 기본값은 HTTPS 엔드포인트를 사용하고, 로컬 개발은 app.json extra / EXPO_PUBLIC_VERITY_API_URL 로 덮어씁니다.
  */
-const DEFAULT_VERITY_API_BASE = "http://98.84.127.220:4000";
+const DEFAULT_VERITY_API_BASE = "https://verify.verity.app";
 
 const API_BASE_URL = resolveApiBaseUrl();
 
@@ -343,6 +346,8 @@ export interface VerificationLookupPayload {
   assetUrl?: string;
   capturedTimestampMs?: number;
   onchainTimestampMs?: number | null;
+  gps?: { lat?: number | null; lng?: number | null } | null;
+  locationSummary?: string | null;
   indexedBlockNumber?: number | null;
   merkleTreeType?: "sha256" | "phash";
   merkleLeafHash?: string | null;
@@ -369,6 +374,7 @@ export interface VerificationLookupPayload {
   chainVerified?: boolean;
   duplicateScore?: number | null;
   aiRiskScore?: number | null;
+  metadata?: Record<string, unknown> | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -384,8 +390,39 @@ export interface VerificationMerkleTree {
 }
 
 export interface UploadVerificationResult {
-  asset: VerificationAssetRecord & { token?: string };
   verification: VerificationLookupPayload;
+  exactMatchType?: "sha256" | null;
+  bestPhashScore?: number | null;
+  exactPhashMatch?: Omit<SimilarVerificationMatch, "score" | "mode"> | null;
+  similarMatches?: SimilarVerificationMatch[];
+}
+
+export interface SimilarVerificationMatch {
+  token: string;
+  score: number;
+  serial?: string;
+  owner?: string;
+  mode?: string;
+  mediaType?: string;
+  createdAt?: string;
+}
+
+export class VerificationLookupError extends Error {
+  similarMatches: SimilarVerificationMatch[];
+  bestPhashScore: number | null;
+  exactPhashMatch: Omit<SimilarVerificationMatch, "score" | "mode"> | null;
+
+  constructor(message: string, opts?: {
+    similarMatches?: SimilarVerificationMatch[];
+    bestPhashScore?: number | null;
+    exactPhashMatch?: Omit<SimilarVerificationMatch, "score" | "mode"> | null;
+  }) {
+    super(message);
+    this.name = "VerificationLookupError";
+    this.similarMatches = opts?.similarMatches || [];
+    this.bestPhashScore = opts?.bestPhashScore ?? null;
+    this.exactPhashMatch = opts?.exactPhashMatch ?? null;
+  }
 }
 
 export async function fetchVerificationByToken(
@@ -433,31 +470,70 @@ export async function uploadVerificationMedia(input: {
 }): Promise<UploadVerificationResult> {
   if (!API_BASE_URL) throw new Error("API URL이 설정되지 않았습니다.");
 
-  const formData = new FormData();
-  formData.append("file", {
-    uri: input.uri,
-    name:
-      input.fileName ||
-      `${input.mediaType === "video" ? "verify-video" : "verify-image"}-${
-        Date.now()
-      }${input.mediaType === "video" ? ".mp4" : ".jpg"}`,
-    type:
-      input.mimeType ||
-      (input.mediaType === "video" ? "video/mp4" : "image/jpeg"),
-  } as any);
-  if (input.owner && input.owner.trim()) {
-    formData.append("owner", input.owner.trim());
+  const standardizedPhoto =
+    input.mediaType === "photo"
+      ? await standardizePhotoForHashing({ uri: input.uri })
+      : null;
+  const hashUri = standardizedPhoto?.uri ?? input.uri;
+  const sha256 = await computeSha256(hashUri);
+  let phash: string | null = null;
+  if (input.mediaType === "video") {
+    const keyframes = await extractVideoPhashKeyframes(input.uri);
+    phash = keyframes[0]?.phash ?? null;
+  } else {
+    phash = await computePhash(hashUri);
   }
 
-  const res = await fetch(`${API_BASE_URL}/v1/verify/upload`, {
+  const res = await fetch(`${API_BASE_URL}/v1/verify/search-hashes`, {
     method: "POST",
-    body: formData,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sha256,
+      phash,
+      mediaType: input.mediaType,
+      fileName:
+        input.fileName ||
+        `${input.mediaType === "video" ? "verify-video" : "verify-image"}-${
+          Date.now()
+        }${input.mediaType === "video" ? ".mp4" : ".jpg"}`,
+      mimeType:
+        (input.mediaType === "photo" ? standardizedPhoto?.mimeType : input.mimeType) ||
+        (input.mediaType === "video" ? "video/mp4" : "image/jpeg"),
+      owner: input.owner?.trim() || null,
+    }),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     const msg =
-      (body as { message?: string }).message || `업로드 검증 실패 (${res.status})`;
+      (body as { message?: string }).message || `해시 검증 실패 (${res.status})`;
     throw new Error(msg);
   }
-  return res.json();
+  const payload = (await res.json()) as {
+    verification?: VerificationLookupPayload | null;
+    similarMatches?: SimilarVerificationMatch[];
+    bestPhashScore?: number | null;
+    exactPhashMatch?: Omit<SimilarVerificationMatch, "score" | "mode"> | null;
+  };
+  if (!payload.verification) {
+    const hasPhashClue =
+      !!payload.exactPhashMatch ||
+      (typeof payload.bestPhashScore === "number" && payload.bestPhashScore > 0);
+    throw new VerificationLookupError(
+      hasPhashClue
+        ? "동일한 SHA-256 원본은 찾지 못했습니다. 서버에 같은 파일 바이트가 등록된 기록은 없고, pHash 유사 후보만 있습니다."
+        : "동일한 SHA-256 원본을 찾지 못했습니다. 앱이 저장한 원본 사진/영상을 다시 선택해 주세요.",
+      {
+        similarMatches: payload.similarMatches || [],
+        bestPhashScore: payload.bestPhashScore ?? null,
+        exactPhashMatch: payload.exactPhashMatch ?? null,
+      }
+    );
+  }
+  return {
+    verification: payload.verification,
+    exactMatchType: "sha256",
+    bestPhashScore: payload.bestPhashScore ?? null,
+    exactPhashMatch: payload.exactPhashMatch ?? null,
+    similarMatches: payload.similarMatches || [],
+  };
 }

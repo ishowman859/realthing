@@ -1,6 +1,7 @@
 import * as ImageManipulator from "expo-image-manipulator";
 import * as Crypto from "expo-crypto";
 import * as FileSystem from "expo-file-system";
+import { Buffer } from "buffer";
 
 const HASH_SIZE = 8;
 const SAMPLE_SIZE = 32;
@@ -52,14 +53,9 @@ export async function computeSha256(imageUri: string): Promise<string> {
   const base64 = await FileSystem.readAsStringAsync(imageUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
-
-  const sha256 = await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    base64,
-    { encoding: Crypto.CryptoEncoding.HEX }
-  );
-
-  return sha256;
+  const bytes = Uint8Array.from(Buffer.from(base64, "base64"));
+  const digest = await Crypto.digest(Crypto.CryptoDigestAlgorithm.SHA256, bytes);
+  return bytesToHex(new Uint8Array(digest));
 }
 
 /**
@@ -206,4 +202,8 @@ export function similarity(hash1: string, hash2: string): number {
   const maxBits = hash1.length * 4;
   const dist = hammingDistance(hash1, hash2);
   return Math.round(((maxBits - dist) / maxBits) * 100);
+}
+
+function bytesToHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }

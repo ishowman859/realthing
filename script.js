@@ -94,7 +94,7 @@ const I18N = {
       "사진을 선택한 뒤 「등록 기록 찾기」를 누르면 백엔드가 해시를 계산해 인덱싱된 기록을 찾습니다.",
     photoSectionLabel: "사진으로 검증",
     photoVerifyHelp:
-      "이미지를 올리면 SHA-256과 pHash를 계산해 정확 일치와 유사 이미지를 함께 조회합니다.",
+      "이미지를 올리면 SHA-256과 pHash를 계산해 정확 일치와 유사 이미지를 함께 조회합니다. 인코딩·재저장 때문에 pHash가 100%가 아니고 SHA-256이 일치하지 않을 수 있으며, pHash 90% 전후도 신뢰 범위로 봅니다.",
     photoVerifyButton: "등록 기록 찾기",
     photoVerifyWorking: "SHA-256 / pHash 계산 및 조회 중…",
     photoVerifyNeedFile: "이미지 파일을 선택하세요.",
@@ -549,6 +549,74 @@ async function loadImageBitmapFromFile(file) {
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+const STANDARD_PHOTO_MAX_LONG_EDGE = 1920;
+const STANDARD_PHOTO_MAX_SHORT_EDGE = 1080;
+const STANDARD_PHOTO_JPEG_QUALITY = 0.9;
+
+async function standardizeBrowserImageForHashing(file) {
+  const source = await loadImageBitmapFromFile(file);
+  const sourceWidth = Number(source.width || source.videoWidth || 0);
+  const sourceHeight = Number(source.height || source.videoHeight || 0);
+  if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
+    throw new Error("이미지 크기를 확인하지 못했습니다.");
+  }
+
+  const targetSize = computeStandardPhotoTargetSize(sourceWidth, sourceHeight);
+  const canvas = document.createElement("canvas");
+  canvas.width = targetSize.width;
+  canvas.height = targetSize.height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("브라우저 캔버스를 초기화하지 못했습니다.");
+  ctx.drawImage(source, 0, 0, targetSize.width, targetSize.height);
+
+  const blob = await canvasToBlob(canvas, "image/jpeg", STANDARD_PHOTO_JPEG_QUALITY);
+  return {
+    blob,
+    fileName: buildStandardizedImageName(file?.name),
+    mimeType: "image/jpeg",
+    meta: {
+      sourceWidth,
+      sourceHeight,
+      outputWidth: targetSize.width,
+      outputHeight: targetSize.height,
+      maxLongEdge: STANDARD_PHOTO_MAX_LONG_EDGE,
+      maxShortEdge: STANDARD_PHOTO_MAX_SHORT_EDGE,
+      jpegQuality: STANDARD_PHOTO_JPEG_QUALITY,
+      format: "jpeg",
+    },
+  };
+}
+
+function computeStandardPhotoTargetSize(width, height) {
+  const isLandscape = width >= height;
+  const maxWidth = isLandscape
+    ? STANDARD_PHOTO_MAX_LONG_EDGE
+    : STANDARD_PHOTO_MAX_SHORT_EDGE;
+  const maxHeight = isLandscape
+    ? STANDARD_PHOTO_MAX_SHORT_EDGE
+    : STANDARD_PHOTO_MAX_LONG_EDGE;
+  const scale = Math.min(1, maxWidth / width, maxHeight / height);
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("표준 JPG 생성에 실패했습니다."));
+    }, type, quality);
+  });
+}
+
+function buildStandardizedImageName(originalName) {
+  const raw = String(originalName || "").trim();
+  const stem = raw ? raw.replace(/\.[a-z0-9]+$/i, "") : `verify-image-${Date.now()}`;
+  return `${stem}.jpg`;
 }
 
 async function computeBrowserImagePhash(file) {
@@ -1024,9 +1092,10 @@ function renderSearchMeta(result) {
   if (result?.exactMatchType === "sha256") {
     summary = "SHA-256 exact match · 100% 일치";
   } else if (result?.exactPhashMatch) {
-    summary = "pHash exact match · 유사 판정";
+    summary =
+      "pHash exact match · 유사 판정 · 인코딩/재저장 때문에 SHA-256 exact와 pHash 100%가 아닐 수 있으며, 90% 전후도 신뢰 범위입니다.";
   } else if (typeof result?.bestPhashScore === "number") {
-    summary = `pHash 유사 후보 · ${Number(result.bestPhashScore).toFixed(2)}%`;
+    summary = `pHash 유사 후보 · ${Number(result.bestPhashScore).toFixed(2)}% · 인코딩/재저장 때문에 SHA-256 exact와 pHash 100%가 아닐 수 있으며, 90% 전후도 신뢰 범위입니다.`;
   }
   el.searchMetaSummary.textContent = summary;
 
@@ -1217,7 +1286,8 @@ function bindMerkle() {
         el.merkleCompareResult.classList.add("is-bad");
         return;
       }
-      const buf = await file.arrayBuffer();
+      const standardized = await standardizeBrowserImageForHashing(file);
+      const buf = await standardized.blob.arrayBuffer();
       const hex = await sha256HexBuffer(buf);
       const expect = String(data.sha256 || "").toLowerCase();
       const match = hex === expect;
@@ -1229,10 +1299,11 @@ function bindMerkle() {
 
 async function searchVerificationByHashes(file) {
   setStatus("warn", t("fetchingVerification"));
-  const sha256 = await sha256HexBuffer(await file.arrayBuffer());
+  const standardized = await standardizeBrowserImageForHashing(file);
+  const sha256 = await sha256HexBuffer(await standardized.blob.arrayBuffer());
   let phash = null;
   try {
-    phash = await computeBrowserImagePhash(file);
+    phash = await computeBrowserImagePhash(standardized.blob);
   } catch (err) {
     console.warn("pHash compute failed; continuing with SHA-256 only", err);
   }
@@ -1243,8 +1314,8 @@ async function searchVerificationByHashes(file) {
       sha256,
       phash,
       mediaType: "photo",
-      fileName: file.name || null,
-      mimeType: file.type || null,
+      fileName: standardized.fileName,
+      mimeType: standardized.mimeType,
     }),
   });
   if (!res.ok) {

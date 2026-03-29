@@ -11,11 +11,13 @@ import {
   ScrollView,
   Share,
   Linking,
+  InteractionManager,
   Platform,
   StatusBar,
 } from "react-native";
 import { CameraView, CameraMode, useCameraPermissions } from "expo-camera";
 import * as MediaLibrary from "expo-media-library";
+import * as FileSystem from "expo-file-system";
 import { Ionicons } from "@expo/vector-icons";
 import { RegistrationStatus } from "../hooks/useVerityHash";
 import {
@@ -23,8 +25,11 @@ import {
   runFirstStageFilter,
 } from "../utils/firstStageFilter";
 import { HashMode } from "../utils/verityApi";
-import { stampHashProofWatermark } from "../utils/hashStampWatermark";
 import { stampMonitorWatermark } from "../utils/monitorWatermark";
+import {
+  standardizePhotoForHashing,
+  StandardizedPhotoMeta,
+} from "../utils/standardizePhoto";
 import { ui } from "../theme/tokens";
 
 const barShadow =
@@ -42,6 +47,7 @@ type CaptureMediaType = "photo" | "video";
 interface CaptureContext {
   captureTimestamp: number;
   gps: { lat: number; lng: number } | null;
+  standardizedPhoto: StandardizedPhotoMeta | null;
 }
 
 interface CameraScreenProps {
@@ -70,9 +76,11 @@ const STATUS_LABELS: Record<RegistrationStatus, string> = {
   building_tx: "처리 준비 중...",
   awaiting_signature: "서버 전송 준비 중...",
   confirming: "서버에 등록 중...",
-  success: "등록 완료!",
+  success: "등록 완료, 10초 배치 앵커 대기 중...",
   error: "오류 발생",
 };
+
+type LibrarySaveState = "idle" | "ready" | "saving" | "saved" | "error";
 
 export default function CameraScreen({
   status,
@@ -106,61 +114,118 @@ export default function CameraScreen({
   const [selectedShareVariant, setSelectedShareVariant] =
     useState<ShareVariant>("proved");
   const [monitorCaptureMode, setMonitorCaptureMode] = useState(false);
+  const [mediaLibraryGranted, setMediaLibraryGranted] = useState<boolean | null>(null);
+  const [isRequestingLibraryPermission, setIsRequestingLibraryPermission] =
+    useState(false);
+  const [librarySaveState, setLibrarySaveState] = useState<LibrarySaveState>("idle");
+  const [librarySaveMessage, setLibrarySaveMessage] = useState<string | null>(null);
+
+  const requestMediaLibraryPermission = async () => {
+    try {
+      setIsRequestingLibraryPermission(true);
+      const permission = await MediaLibrary.requestPermissionsAsync(true);
+      const granted = permission.status === "granted";
+      setMediaLibraryGranted(granted);
+      if (!granted) {
+        Alert.alert(
+          "미디어 보관함",
+          "기기에 등록 기준 표준 JPG/영상 촬영본을 저장하려면 사진/영상 보관함 권한을 허용해 주세요."
+        );
+      }
+      return granted;
+    } finally {
+      setIsRequestingLibraryPermission(false);
+    }
+  };
 
   useEffect(() => {
-    if (status !== "success" || !capturedUri) return;
-    const sha = currentSha256?.trim();
-    const ph = currentPhash?.trim();
-    if (!sha && !ph) return;
-
-    const dedupeKey = `${capturedUri}|${sha ?? ""}|${ph ?? ""}`;
-    if (lastLibrarySaveKeyRef.current === dedupeKey) return;
-
     let cancelled = false;
-
+    if (!capturedUri) {
+      setMediaLibraryGranted(null);
+      setLibrarySaveState("idle");
+      setLibrarySaveMessage(null);
+      return;
+    }
     (async () => {
       try {
-        let outUri = capturedUri;
-        if (capturedMediaType === "photo") {
-          try {
-            outUri = await stampHashProofWatermark(capturedUri, {
-              sha256: sha || null,
-              phash: ph || null,
-            });
-          } catch {
-            /* 해시 오버레이 실패 시 원본 저장 */
-          }
-        }
-        const perm = await MediaLibrary.requestPermissionsAsync();
+        const current = await MediaLibrary.getPermissionsAsync(true);
         if (cancelled) return;
-        if (perm.status !== "granted") {
-          Alert.alert(
-            "미디어 보관함",
-            capturedMediaType === "video"
-              ? "해시 등록이 끝난 영상을 저장하려면 미디어 라이브러리 접근을 허용해 주세요."
-              : "검증 해시가 박힌 촬영본을 저장하려면 사진 라이브러리 접근을 허용해 주세요."
-          );
+        if (current.status === "granted") {
+          setMediaLibraryGranted(true);
+          setLibrarySaveState("ready");
           return;
         }
-        await MediaLibrary.saveToLibraryAsync(outUri);
-        if (!cancelled) lastLibrarySaveKeyRef.current = dedupeKey;
-      } catch (e) {
+        setMediaLibraryGranted(false);
+        setLibrarySaveState("idle");
+      } catch {
         if (!cancelled) {
-          console.warn("saveToLibraryAsync", e);
-          Alert.alert(
-            "저장 실패",
-            capturedMediaType === "video"
-              ? "영상 보관함에 저장하지 못했습니다."
-              : "사진 보관함에 저장하지 못했습니다."
-          );
+          setMediaLibraryGranted(false);
+          setLibrarySaveState("idle");
         }
       }
     })();
-
     return () => {
       cancelled = true;
     };
-  }, [status, capturedUri, currentSha256, currentPhash, capturedMediaType]);
+  }, [capturedUri]);
+
+  const saveCurrentMediaToLibrary = async (requestIfNeeded = false) => {
+    if (!capturedUri || status !== "success") return;
+    const sha = currentSha256?.trim();
+    const ph = currentPhash?.trim();
+    const dedupeKey = `${capturedUri}|${sha ?? ""}|${ph ?? ""}|${capturedMediaType}`;
+    if (lastLibrarySaveKeyRef.current === dedupeKey || librarySaveState === "saving") {
+      return;
+    }
+
+    setLibrarySaveState("saving");
+      setLibrarySaveMessage(
+        capturedMediaType === "video"
+          ? "등록 기준 원본 영상을 Verity 앨범에 저장하고 있습니다..."
+          : "등록 기준 표준 JPG 사진을 Verity 앨범에 저장하고 있습니다..."
+      );
+
+    try {
+      let granted = mediaLibraryGranted === true;
+      if (!granted && requestIfNeeded) {
+        granted = await requestMediaLibraryPermission();
+      }
+      if (!granted) {
+        setLibrarySaveState("idle");
+        setLibrarySaveMessage(
+          "보관함 권한을 허용하면 등록된 촬영본을 기기에 저장할 수 있습니다."
+        );
+        return;
+      }
+
+      await new Promise<void>((resolve) => {
+        InteractionManager.runAfterInteractions(() => resolve());
+      });
+
+      await saveCapturedMediaToLibrary(capturedUri, capturedMediaType);
+      lastLibrarySaveKeyRef.current = dedupeKey;
+      setLibrarySaveState("saved");
+      setLibrarySaveMessage(
+        capturedMediaType === "video"
+          ? "원본 영상이 Verity 앨범에 저장되었습니다. 검증은 이 원본 파일로 다시 올리면 됩니다."
+          : "표준 JPG 사진이 Verity 앨범에 저장되었습니다. 검증은 이 JPG 파일로 다시 올리면 됩니다."
+      );
+    } catch (e) {
+      console.warn("saveToLibraryAsync", e);
+      setLibrarySaveState("error");
+      setLibrarySaveMessage(
+        capturedMediaType === "video"
+          ? "영상 저장에 실패했습니다. 다시 시도해 주세요."
+          : "사진 저장에 실패했습니다. 다시 시도해 주세요."
+      );
+    }
+  };
+
+  useEffect(() => {
+    if (status !== "success" || !capturedUri || mediaLibraryGranted !== true) return;
+    if (librarySaveState === "saved" || librarySaveState === "saving") return;
+    void saveCurrentMediaToLibrary(false);
+  }, [status, capturedUri, mediaLibraryGranted]);
 
   if (!permission) {
     return (
@@ -207,10 +272,16 @@ export default function CameraScreen({
         const processedUri = monitorCaptureMode
           ? await stampMonitorWatermark(photo.uri)
           : photo.uri;
-        setCapturedUri(processedUri);
+        const standardizedPhoto = await standardizePhotoForHashing({
+          uri: processedUri,
+          width: photo.width,
+          height: photo.height,
+        });
+        setCapturedUri(standardizedPhoto.uri);
         setCaptureContext({
           captureTimestamp: Date.now(),
           gps: extractGpsFromExif(photo.exif),
+          standardizedPhoto: standardizedPhoto.meta,
         });
         setFilterResult(null);
         setIsAnalyzing(true);
@@ -269,6 +340,7 @@ export default function CameraScreen({
         setCaptureContext({
           captureTimestamp: Date.now(),
           gps: null,
+          standardizedPhoto: null,
         });
       }
     } catch (err) {
@@ -342,6 +414,7 @@ export default function CameraScreen({
                 captureMediaType: capturedMediaType,
                 captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
                 gps: captureContext?.gps ?? null,
+                standardizedPhoto: captureContext?.standardizedPhoto ?? null,
               },
               { mediaType: capturedMediaType }
             );
@@ -363,6 +436,7 @@ export default function CameraScreen({
       captureMediaType: capturedMediaType,
       captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
       gps: captureContext?.gps ?? null,
+      standardizedPhoto: captureContext?.standardizedPhoto ?? null,
     }, { mediaType: capturedMediaType });
   };
 
@@ -375,6 +449,8 @@ export default function CameraScreen({
     setSelectedShareVariant("proved");
     setMonitorCaptureMode(false);
     setCapturedMediaType(cameraMode === "video" ? "video" : "photo");
+    setLibrarySaveState("idle");
+    setLibrarySaveMessage(null);
     onReset();
   };
 
@@ -388,7 +464,7 @@ export default function CameraScreen({
     if (!verificationUrl) return;
     await Share.share({
       message: `proved by verity\n선택한 공유 스타일: ${
-        selectedShareVariant === "proved" ? "PROVED 테두리" : "원본"
+        selectedShareVariant === "proved" ? "PROVED 테두리" : "표준 JPG"
       }\n검증 링크: ${verificationUrl}`,
     });
   };
@@ -431,7 +507,7 @@ export default function CameraScreen({
                   onPress={() => setSelectedShareVariant("original")}
                 >
                   <Image source={{ uri: capturedUri }} style={styles.variantThumb} />
-                  <Text style={styles.variantLabel}>원본</Text>
+                  <Text style={styles.variantLabel}>표준 JPG</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -568,8 +644,8 @@ export default function CameraScreen({
               {status === "success" && (currentSha256 || currentPhash) ? (
                 <Text style={styles.saveHintText}>
                   {capturedMediaType === "video"
-                    ? "등록이 끝난 영상을 미디어 보관함에 자동 저장합니다. (접근 권한 필요)"
-                    : "하단에 SHA-256·pHash를 박은 촬영본을 사진 보관함에 자동 저장합니다. (접근 권한 필요)"}
+                    ? "등록된 원본 영상을 Verity 앨범에 저장합니다. 해시값은 파일 위에 새기지 않고, 머클 배치 정보는 검증 페이지에서 확인합니다."
+                    : "등록된 표준 JPG 사진을 Verity 앨범에 저장합니다. 해시값은 파일 위에 새기지 않고, 머클 배치 정보는 검증 페이지에서 확인합니다."}
                 </Text>
               ) : null}
 
@@ -631,6 +707,49 @@ export default function CameraScreen({
             </View>
           )}
 
+          {capturedUri ? (
+            <View
+              style={[
+                styles.libraryCard,
+                mediaLibraryGranted === true
+                  ? styles.libraryCardGranted
+                  : styles.libraryCardPending,
+              ]}
+            >
+              <Text style={styles.libraryCardTitle}>기기 저장</Text>
+              <Text style={styles.libraryCardDesc}>
+                {librarySaveMessage
+                  ? librarySaveMessage
+                  : mediaLibraryGranted === true
+                    ? "등록이 완료되면 표준 JPG 촬영본이 기기 보관함의 Verity 앨범에 저장됩니다."
+                    : "기기에 저장하려면 사진/영상 보관함 권한을 허용해 주세요."}
+              </Text>
+              {status === "success" ? (
+                <TouchableOpacity
+                  style={styles.libraryPermissionButton}
+                  onPress={() => {
+                    void saveCurrentMediaToLibrary(true);
+                  }}
+                  disabled={
+                    isRequestingLibraryPermission || librarySaveState === "saving"
+                  }
+                >
+                  <Text style={styles.libraryPermissionButtonText}>
+                    {isRequestingLibraryPermission
+                      ? "권한 요청 중..."
+                      : librarySaveState === "saving"
+                        ? "저장 중..."
+                        : librarySaveState === "saved"
+                          ? "저장 완료"
+                          : mediaLibraryGranted === true
+                            ? "기기에 저장"
+                            : "권한 허용 후 저장"}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
+
           {/* 버튼 영역 */}
           <View style={styles.previewButtons}>
             {status === "idle" && (
@@ -687,7 +806,7 @@ export default function CameraScreen({
                     <Text style={styles.shareButtonText}>
                       {selectedShareVariant === "proved"
                         ? "PROVED 버전 공유"
-                        : "원본 공유"}
+                        : "표준 JPG 공유"}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -1199,6 +1318,45 @@ const styles = StyleSheet.create({
     marginTop: 8,
     fontWeight: "600",
   },
+  libraryCard: {
+    width: "100%",
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  libraryCardPending: {
+    backgroundColor: ui.warningSoft,
+    borderColor: ui.warning,
+  },
+  libraryCardGranted: {
+    backgroundColor: ui.successSoft,
+    borderColor: ui.success,
+  },
+  libraryCardTitle: {
+    color: ui.text,
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  libraryCardDesc: {
+    color: ui.textSecondary,
+    fontSize: 13,
+    lineHeight: 20,
+    marginTop: 6,
+  },
+  libraryPermissionButton: {
+    marginTop: 12,
+    alignSelf: "flex-start",
+    backgroundColor: ui.text,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  libraryPermissionButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
   previewButtons: {
     width: "100%",
     gap: 12,
@@ -1394,4 +1552,54 @@ function extractGpsFromExif(exif: any): { lat: number; lng: number } | null {
   const lng = Number(exif.GPSLongitude ?? exif.longitude ?? exif.Longitude);
   if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
   return { lat, lng };
+}
+
+function normalizeLocalMediaUri(uri: string): string {
+  const trimmed = String(uri || "").trim();
+  if (!trimmed) {
+    throw new Error("저장할 미디어 경로가 없습니다.");
+  }
+  return trimmed.startsWith("file://") ? trimmed : `file://${trimmed}`;
+}
+
+async function saveCapturedMediaToLibrary(
+  uri: string,
+  mediaType: CaptureMediaType
+) {
+  const normalizedUri = await ensureSavableMediaUri(uri, mediaType);
+  const info = await FileSystem.getInfoAsync(normalizedUri);
+  if (!info.exists) {
+    throw new Error(`파일이 존재하지 않습니다: ${normalizedUri}`);
+  }
+
+  const asset = await MediaLibrary.createAssetAsync(normalizedUri);
+  const albumName = "Verity";
+  const existingAlbum = await MediaLibrary.getAlbumAsync(albumName);
+  if (existingAlbum) {
+    await MediaLibrary.addAssetsToAlbumAsync([asset], existingAlbum, false);
+  } else {
+    await MediaLibrary.createAlbumAsync(albumName, asset, false);
+  }
+}
+
+async function ensureSavableMediaUri(
+  uri: string,
+  mediaType: CaptureMediaType
+): Promise<string> {
+  const normalizedUri = normalizeLocalMediaUri(uri);
+  const sourceInfo = await FileSystem.getInfoAsync(normalizedUri);
+  if (!sourceInfo.exists) {
+    throw new Error(`파일이 존재하지 않습니다: ${normalizedUri}`);
+  }
+  const hasExtension = /\.[a-z0-9]+$/i.test(normalizedUri);
+  if (hasExtension) return normalizedUri;
+
+  const targetUri = `${FileSystem.cacheDirectory}verity-save-${Date.now()}${
+    mediaType === "video" ? ".mp4" : ".jpg"
+  }`;
+  await FileSystem.copyAsync({
+    from: normalizedUri,
+    to: targetUri,
+  });
+  return targetUri;
 }
