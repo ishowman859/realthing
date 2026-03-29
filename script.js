@@ -1,6 +1,6 @@
 // Verity 검증 페이지 — API 연동 및 i18n
 /** 저장소 기본 백엔드 (?api= · meta · Actions 변수가 우선). Pages(HTTPS)에서는 http 메타는 쓰지 않음(혼합 콘텐츠). */
-const DEFAULT_VERITY_PUBLIC_API = "http://98.84.127.220:4000";
+const DEFAULT_VERITY_PUBLIC_API = "https://api.veritychains.com";
 
 const __params = new URLSearchParams(window.location.search);
 const __apiFromQuery = __params.get("api");
@@ -14,19 +14,6 @@ const __verityStaticPages =
   document.querySelector('meta[name="verity-gh-pages"]')?.getAttribute("content") === "1";
 const __host = window.location.hostname;
 let API_BASE_ERROR = "";
-function buildHttpVerifyRedirectTarget() {
-  const path = typeof window !== "undefined" ? window.location.pathname : "";
-  const normalizedPath = String(path || "");
-  let targetPath = "/verify";
-  if (/^\/v\/[^/]+/i.test(normalizedPath)) {
-    targetPath = normalizedPath;
-  } else if (/^\/v(?:\/)?$/i.test(normalizedPath)) {
-    targetPath = "/v";
-  } else if (/^\/verify(?:\/)?$/i.test(normalizedPath)) {
-    targetPath = "/verify";
-  }
-  return `${DEFAULT_VERITY_PUBLIC_API}${targetPath}`;
-}
 
 /** HTTPS 페이지에서는 meta의 http:// API를 무시 (?api= 또는 VERITY_PAGES_API 권장) */
 function __apiMetaForSecureSite() {
@@ -50,23 +37,6 @@ function __normalizeApiBase(b) {
   return String(b).trim().replace(/\/+$/, "");
 }
 
-function maybeRedirectToHttpVerifyPage() {
-  if (typeof window === "undefined") return false;
-  if (window.location.protocol !== "https:") return false;
-  if (window.__VERITY_API_BASE__ || __apiFromQuery) return false;
-  if (__apiMetaForSecureSite()) return false;
-  if (!/^http:\/\//i.test(DEFAULT_VERITY_PUBLIC_API)) return false;
-
-  const target = new URL(buildHttpVerifyRedirectTarget());
-  const currentParams = new URLSearchParams(window.location.search);
-  for (const [key, value] of currentParams.entries()) {
-    if (key === "api") continue;
-    target.searchParams.set(key, value);
-  }
-  window.location.replace(target.toString());
-  return true;
-}
-
 const API_BASE = __normalizeApiBase(
   window.__VERITY_API_BASE__ ||
     __apiFromQuery ||
@@ -84,7 +54,7 @@ if (
   /^http:\/\//i.test(API_BASE)
 ) {
   API_BASE_ERROR =
-    "HTTPS 페이지에서는 HTTP 백엔드를 호출할 수 없습니다. 지금 백엔드가 HTTP(98.84.127.220:4000)만 열려 있어서 브라우저가 fetch를 차단합니다.";
+    "HTTPS 페이지에서는 HTTP 백엔드를 호출할 수 없습니다. HTTPS API 주소를 사용하세요.";
 }
 
 const I18N = {
@@ -139,9 +109,9 @@ const I18N = {
     recheckError: "재검증 요청 중 오류",
     loadFail: "조회 실패",
     githubPagesNeedApi:
-      "API 주소가 없습니다. 저장소 Actions 변수 VERITY_PAGES_API(HTTPS 백엔드)를 설정하거나, URL에 ?api=https://백엔드주소 를 붙이세요.",
+      "API 주소가 없습니다. 저장소 Actions 변수 VERITY_PAGES_API를 https://api.veritychains.com 같은 HTTPS 백엔드로 설정하거나, URL에 ?api=https://백엔드주소 를 붙이세요.",
     httpsHttpBlocked:
-      "HTTPS 페이지에서는 HTTP 백엔드를 호출할 수 없습니다. 현재 백엔드는 http://98.84.127.220:4000 이고, GitHub Pages 같은 HTTPS 페이지에서는 브라우저가 fetch를 막습니다.",
+      "HTTPS 페이지에서는 HTTP 백엔드를 호출할 수 없습니다. HTTPS 백엔드 주소를 사용하세요.",
     uploadSectionLabel: "미디어 업로드",
     uploadHelp:
       "사진 또는 동영상을 올리면 서버가 해시를 계산하고 등록한 뒤 아래에 검증 결과를 표시합니다.",
@@ -251,9 +221,9 @@ const I18N = {
     recheckError: "Error while requesting recheck",
     loadFail: "Failed to load",
     githubPagesNeedApi:
-      "On GitHub Pages, set the API URL: add ?api=https://your-api-host to the URL.",
+      "On GitHub Pages, set the API URL to an HTTPS backend such as https://api.veritychains.com, or add ?api=https://your-api-host to the URL.",
     httpsHttpBlocked:
-      "This HTTPS page cannot call an HTTP backend. The current backend is http://98.84.127.220:4000, so the browser blocks the fetch.",
+      "This HTTPS page cannot call an HTTP backend. Use an HTTPS API host instead.",
     uploadSectionLabel: "Upload media",
     uploadHelp:
       "Upload a photo or video: the server computes hashes, registers the asset, and shows verification below.",
@@ -363,9 +333,9 @@ const I18N = {
     recheckError: "再検証リクエスト中にエラー",
     loadFail: "取得失敗",
     githubPagesNeedApi:
-      "API の URL がありません。リポジトリの Actions 変数 VERITY_PAGES_API（HTTPS）を設定するか、?api=https://バックエンド を付けてください。",
+      "API の URL がありません。リポジトリの Actions 変数 VERITY_PAGES_API を https://api.veritychains.com のような HTTPS バックエンドに設定するか、?api=https://バックエンド を付けてください。",
     httpsHttpBlocked:
-      "HTTPS ページから HTTP バックエンドは呼べません。現在のバックエンドは http://98.84.127.220:4000 のため、ブラウザが fetch を遮断します。",
+      "HTTPS ページから HTTP バックエンドは呼べません。HTTPS バックエンドを使ってください。",
     uploadSectionLabel: "メディアアップロード",
     uploadHelp: "写真または動画を送ると、サーバーがハッシュを計算して登録し、下に検証結果を表示します。",
     uploadButtonLabel: "アップロードして登録",
@@ -467,9 +437,9 @@ const I18N = {
     recheckError: "请求重新验证时出错",
     loadFail: "加载失败",
     githubPagesNeedApi:
-      "缺少 API 地址：请设置仓库 Actions 变量 VERITY_PAGES_API（HTTPS），或在 URL 加上 ?api=https://你的后端",
+      "缺少 API 地址：请把仓库 Actions 变量 VERITY_PAGES_API 设为 HTTPS 后端（例如 https://api.veritychains.com），或在 URL 加上 ?api=https://你的后端",
     httpsHttpBlocked:
-      "HTTPS 页面不能调用 HTTP 后端。当前后端是 http://98.84.127.220:4000，因此浏览器会阻止 fetch。",
+      "HTTPS 页面不能调用 HTTP 后端，请改用 HTTPS 后端地址。",
     uploadSectionLabel: "上传媒体",
     uploadHelp: "上传照片或视频后，服务器会计算哈希并注册，在下方显示验证结果。",
     uploadButtonLabel: "上传并登记",
@@ -803,15 +773,7 @@ function t(key, vars = {}) {
   return text;
 }
 
-let lastLocalPreviewUrl = null;
 let lastSearchResult = null;
-
-function revokeLocalPreview() {
-  if (lastLocalPreviewUrl) {
-    URL.revokeObjectURL(lastLocalPreviewUrl);
-    lastLocalPreviewUrl = null;
-  }
-}
 
 /** 버튼 연타·서버 1초 가드와 맞춤: 동작 종료 후에도 최소 1초 간격 */
 const BTN_COOLDOWN_MS = 1000;
@@ -849,7 +811,6 @@ const el = {
   locationSummary: document.getElementById("locationSummary"),
   gpsVal: document.getElementById("gpsVal"),
   metadataVal: document.getElementById("metadataVal"),
-  labelOriginalFile: document.getElementById("labelOriginalFile"),
   statusBadge: document.getElementById("statusBadge"),
   mode: document.getElementById("mode"),
   createdAt: document.getElementById("createdAt"),
@@ -860,8 +821,6 @@ const el = {
   monitorAlert: document.getElementById("monitorAlert"),
   sha256: document.getElementById("sha256"),
   phash: document.getElementById("phash"),
-  assetImage: document.getElementById("assetImage"),
-  assetEmpty: document.getElementById("assetEmpty"),
   merkleCard: document.getElementById("merkleCard"),
   merkleIntro: document.getElementById("merkleIntro"),
   merklePending: document.getElementById("merklePending"),
@@ -940,11 +899,8 @@ function applyStaticI18n() {
   setText(el.labelOwner, t("ownerLabel"));
   setText(el.labelLocation, t("locationLabel"));
   setText(el.labelHashInfo, t("hashInfoLabel"));
-  setText(el.labelOriginalFile, t("originalFileLabel"));
   setText(el.labelActions, t("actionsLabel"));
   setText(el.recheckButton, t("recheckButton"));
-  setText(el.assetEmpty, t("noImage"));
-  el.assetImage.alt = t("assetAlt");
   if (el.labelPhotoVerify) setText(el.labelPhotoVerify, t("photoSectionLabel"));
   if (el.photoVerifyHelp) el.photoVerifyHelp.textContent = t("photoVerifyHelp");
   if (el.verifyPhotoBtn) setText(el.verifyPhotoBtn, t("photoVerifyButton"));
@@ -1329,20 +1285,6 @@ function render(data) {
   }
   updateMonitorAlert(data);
 
-  if (data.assetUrl) {
-    revokeLocalPreview();
-    el.assetImage.src = data.assetUrl;
-    el.assetImage.style.display = "block";
-    el.assetEmpty.style.display = "none";
-  } else if (lastLocalPreviewUrl) {
-    el.assetImage.src = lastLocalPreviewUrl;
-    el.assetImage.style.display = "block";
-    el.assetEmpty.style.display = "none";
-  } else {
-    el.assetImage.style.display = "none";
-    el.assetEmpty.style.display = "block";
-  }
-
   renderMerkleChain(data);
   renderMerkle(data);
 
@@ -1388,8 +1330,6 @@ function bindPhotoVerify() {
     try {
       const result = await searchVerificationByHashes(file);
       const data = result?.verification || null;
-      revokeLocalPreview();
-      lastLocalPreviewUrl = URL.createObjectURL(file);
       renderSearchMeta(result);
       if (!data) {
         const score =
@@ -1411,7 +1351,6 @@ function bindPhotoVerify() {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : t("loadFail");
-      revokeLocalPreview();
       if (status) {
         status.textContent = message;
         status.style.display = "block";
@@ -1427,7 +1366,6 @@ function bindPhotoVerify() {
 }
 
 async function main() {
-  if (maybeRedirectToHttpVerifyPage()) return;
   initBranding();
   applyStaticI18n();
   bindPhotoVerify();
