@@ -15,12 +15,14 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import {
+  fetchVerificationByToken,
   recheckVerificationByToken,
   uploadVerificationMedia,
   MediaType,
   VerificationMerkleTree,
   VerificationLookupPayload,
   VerificationLookupError,
+  VerificationSearchCandidate,
 } from "../utils/verityApi";
 import {
   createClientLeafHash,
@@ -48,12 +50,12 @@ interface SelectedMediaState {
 interface SearchResultMetaState {
   exactMatchType: "sha256" | null;
   bestPhashScore: number | null;
-  exactPhashMatch: { token: string; serial?: string; owner?: string; mediaType?: string; createdAt?: string } | null;
+  exactPhashMatch: VerificationSearchCandidate | null;
   similarMatchesCount: number;
 }
 
 const PHASH_TRUST_NOTE =
-  "인코딩·재저장 때문에 pHash가 100%가 아니고 SHA-256 exact match가 아닐 수 있습니다. pHash 90% 전후도 신뢰 범위로 봅니다.";
+  "Re-encoding or re-saving can prevent a 100% pHash match and a SHA-256 exact match. A pHash score around 90% can still be considered trustworthy.";
 
 const cardShadow =
   Platform.OS === "ios"
@@ -69,7 +71,7 @@ function formatDateTime(value: string | number | undefined): string {
   if (value === undefined || value === null) return "-";
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "-";
-  return d.toLocaleString("ko-KR");
+  return d.toLocaleString("en-US");
 }
 
 type MerkleVizState =
@@ -90,7 +92,7 @@ function MerkleTreeVizPanel({ state }: { state: MerkleVizState }) {
     return (
       <View style={styles.merkleVizBox}>
         <ActivityIndicator color={ui.primary} />
-        <Text style={styles.merkleVizHint}>경로 해시 계산 중…</Text>
+        <Text style={styles.merkleVizHint}>Computing path hashes…</Text>
       </View>
     );
   }
@@ -104,7 +106,7 @@ function MerkleTreeVizPanel({ state }: { state: MerkleVizState }) {
   const { topDown, serverRoot, match } = state.ok;
   return (
     <View style={styles.merkleVizBox}>
-      <Text style={styles.merkleVizTitle}>머클 경로 시각화 (루트 → 리프)</Text>
+      <Text style={styles.merkleVizTitle}>Merkle path visualization (root to leaf)</Text>
       <View
         style={[
           styles.merkleVizBanner,
@@ -118,8 +120,8 @@ function MerkleTreeVizPanel({ state }: { state: MerkleVizState }) {
           ]}
         >
           {match
-            ? "재계산 루트가 공개 루트와 일치합니다."
-            : "재계산 루트가 공개 루트와 다릅니다."}
+            ? "The recomputed root matches the published root."
+            : "The recomputed root does not match the published root."}
         </Text>
       </View>
       <View style={styles.merkleVizNodeRoot}>
@@ -133,12 +135,12 @@ function MerkleTreeVizPanel({ state }: { state: MerkleVizState }) {
         const lower = topDown[k + 1];
         const isLast = k === topDown.length - 2;
         const formula =
-          upper.position === "left" ? "H(이웃 ‖ 하위)" : "H(하위 ‖ 이웃)";
+          upper.position === "left" ? "H(sibling || child)" : "H(child || sibling)";
         return (
           <View key={`merkle-viz-${k}`}>
             <Text style={styles.merkleVizConn}>↓</Text>
             <View style={styles.merkleVizStep}>
-              <Text style={styles.merkleVizStepLab}>병합 · {formula}</Text>
+              <Text style={styles.merkleVizStepLab}>Merge · {formula}</Text>
               <Text style={styles.merkleVizSib} selectable>
                 {upper.sibling}
               </Text>
@@ -146,7 +148,7 @@ function MerkleTreeVizPanel({ state }: { state: MerkleVizState }) {
                 {String(upper.position || "").toUpperCase()}
               </Text>
               <Text style={styles.merkleVizChildHint}>
-                하위 노드: {shortHashHex(upper.childHash || "")}
+                Child node: {shortHashHex(upper.childHash || "")}
               </Text>
             </View>
             <View
@@ -183,10 +185,10 @@ function MerkleTreeSummary({
   return (
     <View style={styles.treeSummaryCard}>
       <Text style={styles.treeSummaryTitle}>{label}</Text>
-      <Field label="상태" value={tree.verified ? "검증 가능" : tree.reason || "대기"} />
-      <Field label="루트" value={tree.storedRoot} mono small />
-      <Field label="리프" value={tree.leafHash} mono small />
-      <Field label="경로 길이" value={proofCount ? String(proofCount) : "-"} />
+      <Field label="Status" value={tree.verified ? "Verifiable" : tree.reason || "Pending"} />
+      <Field label="Root" value={tree.storedRoot} mono small />
+      <Field label="Leaf" value={tree.leafHash} mono small />
+      <Field label="Path length" value={proofCount ? String(proofCount) : "-"} />
     </View>
   );
 }
@@ -207,6 +209,8 @@ export default function VerifyScreen({
   const [merkleOk, setMerkleOk] = useState<boolean | null>(null);
   const [merkleViz, setMerkleViz] = useState<MerkleVizState>("idle");
   const [showDetails, setShowDetails] = useState(false);
+  const [candidates, setCandidates] = useState<VerificationSearchCandidate[]>([]);
+  const [loadingCandidateToken, setLoadingCandidateToken] = useState<string | null>(null);
 
   const proofList = useMemo(() => {
     if (data && Array.isArray(data.merkleProof)) return data.merkleProof;
@@ -229,7 +233,7 @@ export default function VerifyScreen({
         if (!leaf) {
           if (!cancelled) {
             setMerkleViz({
-              error: "리프 해시가 없어 경로를 표시할 수 없습니다.",
+              error: "The leaf hash is missing, so the path cannot be displayed.",
             });
           }
           return;
@@ -241,7 +245,7 @@ export default function VerifyScreen({
         if (badProof) {
           if (!cancelled) {
             setMerkleViz({
-              error: "머클 경로 형식이 올바르지 않습니다.",
+              error: "The Merkle path format is invalid.",
             });
           }
           return;
@@ -272,7 +276,7 @@ export default function VerifyScreen({
   const pickMedia = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert("권한 필요", "사진/영상 검증을 위해 미디어 라이브러리 접근 권한이 필요합니다.");
+      Alert.alert("Permission required", "Media library access is required to verify photos and videos.");
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -294,19 +298,21 @@ export default function VerifyScreen({
 
   const uploadAndVerify = useCallback(async () => {
     if (!selectedMedia) {
-      Alert.alert("알림", "검증할 사진 또는 영상을 먼저 선택하세요.");
+      Alert.alert("Notice", "Select a photo or video to verify first.");
       return;
     }
     setUploading(true);
     setError(null);
     setMatchHint(null);
     setSearchMeta(null);
+    setCandidates([]);
     setMerkleMsg(null);
     setMerkleOk(null);
     setMerkleViz("idle");
     try {
       const payload = await uploadVerificationMedia(selectedMedia);
-      setData(payload.verification);
+      setData(payload.verification || null);
+      setCandidates(Array.isArray(payload.candidates) ? payload.candidates : []);
       setSearchMeta({
         exactMatchType: payload.exactMatchType || null,
         bestPhashScore: payload.bestPhashScore ?? null,
@@ -317,21 +323,22 @@ export default function VerifyScreen({
       });
     } catch (e) {
       setData(null);
+      setCandidates(e instanceof VerificationLookupError ? e.candidates : []);
       if (e instanceof VerificationLookupError) {
         const hints: string[] = [];
         if (e.exactPhashMatch) {
           hints.push(
-            `동일 pHash 기록은 있지만, SHA-256 exact match는 없습니다. serial: ${
+            `A matching pHash record exists, but there is no SHA-256 exact match. Serial: ${
               e.exactPhashMatch.serial || "-"
             }`
           );
         } else if (e.similarMatches.length > 0) {
           hints.push(
-            `유사 pHash 후보 ${e.similarMatches.length}건이 있지만 exact match는 아닙니다.`
+            `${e.similarMatches.length} similar pHash candidates were found, but none is an exact match.`
           );
         }
         if (typeof e.bestPhashScore === "number") {
-          hints.push(`최고 유사도: ${e.bestPhashScore.toFixed(2)}%`);
+          hints.push(`Best similarity: ${e.bestPhashScore.toFixed(2)}%`);
         }
         if (
           e.exactPhashMatch ||
@@ -356,6 +363,23 @@ export default function VerifyScreen({
     }
   }, [selectedMedia]);
 
+  const selectCandidate = useCallback(async (candidate: VerificationSearchCandidate) => {
+    const token = String(candidate?.token || "").trim();
+    if (!token) return;
+    setLoadingCandidateToken(token);
+    setError(null);
+    setMerkleMsg(null);
+    setMerkleOk(null);
+    try {
+      const payload = await fetchVerificationByToken(token);
+      setData(payload);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setLoadingCandidateToken(null);
+    }
+  }, []);
+
   const recheck = useCallback(async () => {
     const t = (data?.token || initialToken || "").trim();
     if (!t || !data) return;
@@ -376,7 +400,7 @@ export default function VerifyScreen({
     const proof = Array.isArray(data.merkleProof) ? data.merkleProof : null;
     const root = data.merkleRoot;
     if (!proof?.length || !root) {
-      setMerkleMsg("머클 경로가 아직 없습니다.");
+      setMerkleMsg("The Merkle path is not available yet.");
       setMerkleOk(false);
       return;
     }
@@ -390,11 +414,11 @@ export default function VerifyScreen({
         const recomputed = await createClientLeafHash(data);
         if (data.merkleLeafHash) {
           if (recomputed === data.merkleLeafHash) {
-            lines.push("직렬화 리프가 서버 기록과 일치합니다.");
+            lines.push("The serialized leaf matches the server record.");
             pathLeaf = recomputed;
           } else {
             lines.push(
-              "경고: 재계산 리프 ≠ 서버 merkleLeafHash. 서버 리프로 경로만 검증합니다."
+              "Warning: the recomputed leaf does not match the server merkleLeafHash. The path will be verified using the server leaf only."
             );
             pathLeaf = data.merkleLeafHash;
           }
@@ -402,18 +426,18 @@ export default function VerifyScreen({
           pathLeaf = recomputed;
         }
       } else {
-        lines.push("assetId 없음: 서버가 준 리프 해시로만 경로를 검증합니다.");
+        lines.push("No assetId is available, so the path will be verified only with the server-provided leaf hash.");
       }
       if (!pathLeaf) {
-        setMerkleMsg(`${lines.join(" ")} 검증 실패`);
+        setMerkleMsg(`${lines.join(" ")} Verification failed.`);
         setMerkleOk(false);
         return;
       }
       const ok = await verifyMerkleProofClient(pathLeaf, proof, root);
       lines.push(
         ok
-          ? "머클 경로 검증 성공: 계산 루트가 공개 루트와 일치합니다."
-          : "머클 경로 불일치."
+          ? "Merkle path verification succeeded: the computed root matches the published root."
+          : "Merkle path mismatch."
       );
       setMerkleMsg(lines.join("\n"));
       setMerkleOk(ok);
@@ -429,7 +453,7 @@ export default function VerifyScreen({
         <TouchableOpacity onPress={onBack} style={styles.backBtn} hitSlop={12}>
           <Ionicons name="arrow-back" size={24} color={ui.text} />
         </TouchableOpacity>
-        <Text style={styles.toolbarTitle}>검증 조회</Text>
+        <Text style={styles.toolbarTitle}>Verification Lookup</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -439,9 +463,9 @@ export default function VerifyScreen({
         keyboardShouldPersistTaps="handled"
       >
         <View style={[styles.card, cardShadow]}>
-          <Text style={styles.cardTitle}>업로드 검증</Text>
+          <Text style={styles.cardTitle}>Upload Verification</Text>
           <Text style={styles.cardHint}>
-            사진이나 영상을 선택하면 앱이 해시를 계산해 exact match를 찾고, 배치·머클트리·루트해시·Solana 앵커 정보는 자세히 보기에서 확인합니다.
+            Select a photo or video and the app will compute its hashes, look for an exact match, and let you review batch, Merkle tree, root hash, and Solana anchor details in the expanded view.
           </Text>
           <Text style={styles.cardHint}>{PHASH_TRUST_NOTE}</Text>
           <TouchableOpacity
@@ -450,12 +474,12 @@ export default function VerifyScreen({
             disabled={uploading}
             activeOpacity={0.85}
           >
-            <Text style={styles.outlineBtnText}>사진/영상 선택</Text>
+            <Text style={styles.outlineBtnText}>Choose Photo or Video</Text>
           </TouchableOpacity>
           {selectedMedia ? (
             <View style={styles.selectedMediaCard}>
               <Text style={styles.selectedMediaLabel}>
-                선택됨: {selectedMedia.mediaType === "video" ? "영상" : "사진"}
+                Selected: {selectedMedia.mediaType === "video" ? "Video" : "Photo"}
               </Text>
               <Text style={styles.selectedMediaPath} numberOfLines={2}>
                 {selectedMedia.fileName || selectedMedia.uri}
@@ -471,7 +495,7 @@ export default function VerifyScreen({
             {uploading ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.primaryBtnText}>업로드 후 검증</Text>
+              <Text style={styles.primaryBtnText}>Upload and Verify</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -488,18 +512,81 @@ export default function VerifyScreen({
           </View>
         ) : null}
 
+        {candidates.length > 0 ? (
+          <View style={[styles.card, cardShadow]}>
+            <Text style={styles.sectionLabel}>Candidate matches</Text>
+            <Text style={styles.cardHint}>
+              Step 1: pHash similarity narrowed the search set. Step 2: choose one candidate to load its proof and on-chain batch record.
+            </Text>
+            {candidates.map((candidate) => {
+              const scoreText =
+                typeof candidate.score === "number"
+                  ? `${candidate.score.toFixed(2)}%`
+                  : "-";
+              const distanceText =
+                typeof candidate.hammingDistance === "number"
+                  ? String(candidate.hammingDistance)
+                  : "-";
+              const isLoading = loadingCandidateToken === candidate.token;
+              return (
+                <TouchableOpacity
+                  key={candidate.token}
+                  style={styles.candidateCard}
+                  onPress={() => {
+                    void selectCandidate(candidate);
+                  }}
+                  disabled={isLoading}
+                  activeOpacity={0.88}
+                >
+                  <View style={styles.candidateHeader}>
+                    <Text style={styles.candidateSerial}>
+                      {candidate.serial || candidate.token}
+                    </Text>
+                    <Text style={styles.candidateScore}>{scoreText}</Text>
+                  </View>
+                  <Text style={styles.candidateMeta}>
+                    {candidate.matchType || "similar_phash"} · Hamming {distanceText}
+                  </Text>
+                  <Text style={styles.candidateMeta}>
+                    {candidate.owner || "-"} · {candidate.mediaType || "-"}
+                  </Text>
+                  <Text style={styles.candidateHash} numberOfLines={1}>
+                    Combined hash ({candidate.combinedHashType || "phash"}):{" "}
+                    {candidate.combinedHash || "-"}
+                  </Text>
+                  <View style={styles.candidateFooter}>
+                    <Text style={styles.candidateProof}>
+                      {candidate.proofReady
+                        ? "Proof available"
+                        : "Proof pending batch finalization"}
+                    </Text>
+                    {isLoading ? (
+                      <ActivityIndicator color={ui.primary} />
+                    ) : (
+                      <Ionicons
+                        name="chevron-forward"
+                        size={18}
+                        color={ui.primary}
+                      />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        ) : null}
+
         {data ? (
           <View style={[styles.card, cardShadow]}>
-            <Text style={styles.sectionLabel}>요약</Text>
-            <Field label="일련번호" value={data.serial} />
-            <Field label="모드" value={(data.mode || "-").toUpperCase()} />
-            <Field label="소유자" value={data.owner} mono />
+            <Text style={styles.sectionLabel}>Summary</Text>
+            <Field label="Serial" value={data.serial} />
+            <Field label="Mode" value={(data.mode || "-").toUpperCase()} />
             <Field
-              label="생성 시각"
+              label="Created at"
               value={data.createdAt ? formatDateTime(data.createdAt) : "-"}
             />
             <Field
-              label="촬영 시각"
+              label="Captured at"
               value={
                 data.capturedTimestampMs != null
                   ? formatDateTime(Number(data.capturedTimestampMs))
@@ -507,7 +594,7 @@ export default function VerifyScreen({
               }
             />
             <Field
-              label="온체인 시각"
+              label="Anchored at"
               value={
                 data.onchainTimestampMs != null
                   ? formatDateTime(Number(data.onchainTimestampMs))
@@ -515,41 +602,52 @@ export default function VerifyScreen({
               }
             />
             <Field
-              label="검색 판정"
+              label="Match result"
               value={
                 searchMeta?.exactMatchType === "sha256"
-                  ? "SHA-256 exact match · 100% 일치"
+                  ? "SHA-256 exact match · 100% match"
                   : searchMeta?.exactPhashMatch
-                    ? `pHash exact match · 유사 판정`
+                    ? `pHash exact match · similar content`
                     : typeof searchMeta?.bestPhashScore === "number"
-                      ? `pHash 유사 후보 · ${searchMeta.bestPhashScore.toFixed(2)}%`
-                      : "SHA-256 exact match · 100% 일치"
+                      ? `pHash candidate match · ${searchMeta.bestPhashScore.toFixed(2)}%`
+                      : "SHA-256 exact match · 100% match"
               }
+            />
+            <Field
+              label="Metadata summary"
+              value={summarizeMetadata(data.metadata)}
             />
             {(searchMeta?.exactPhashMatch ||
               (typeof searchMeta?.bestPhashScore === "number" &&
                 searchMeta.bestPhashScore >= 90)) ? (
               <Text style={styles.cardHint}>{PHASH_TRUST_NOTE}</Text>
             ) : null}
+            <MerkleTreeVizPanel state={merkleViz} />
             <TouchableOpacity
               style={[styles.outlineBtn, { marginTop: 8, marginBottom: 12 }]}
               onPress={() => setShowDetails((prev) => !prev)}
             >
               <Text style={styles.outlineBtnText}>
-                {showDetails ? "자세히 보기 닫기" : "자세히 보기"}
+                {showDetails ? "Hide details" : "Show details"}
               </Text>
             </TouchableOpacity>
             {showDetails ? (
               <>
-                <Text style={styles.sectionLabel}>해시 · 메타데이터</Text>
+                <Text style={styles.sectionLabel}>Hashes and Metadata</Text>
                 <Field label="SHA-256" value={data.sha256} mono small />
                 <Field label="pHash" value={data.phash} mono small />
                 <Field
-                  label="위치 요약"
+                  label="Combined hash"
+                  value={data.combinedHashes?.preferred || "-"}
+                  mono
+                  small
+                />
+                <Field
+                  label="Location summary"
                   value={data.locationSummary || "-"}
                 />
                 <Field
-                  label="원본 좌표"
+                  label="Raw coordinates"
                   value={
                     data.gps?.lat != null && data.gps?.lng != null
                       ? `${Number(data.gps.lat).toFixed(4)}, ${Number(data.gps.lng).toFixed(4)}`
@@ -559,54 +657,53 @@ export default function VerifyScreen({
                   small
                 />
                 <Field
-                  label="앵커 저장 위치"
+                  label="Anchor storage"
                   value={
                     data.batchAnchor?.source === "solana" ? "Solana + DB" : "DB only"
                   }
                 />
                 <View style={styles.anchorPayloadBox}>
-                  <Text style={styles.proofTitle}>메타데이터</Text>
+                  <Text style={styles.proofTitle}>Metadata</Text>
                   <Text style={styles.anchorPayloadText} selectable>
                     {prettyJson(data.metadata)}
                   </Text>
                 </View>
 
                 <Text style={[styles.sectionLabel, { marginTop: 16 }]}>
-                  머클 · 배치
+                  Merkle and Batch
                 </Text>
                 <Field
-                  label="배치 SHA-256 루트"
+                  label="Batch SHA-256 root"
                   value={data.batchMerkleRoots?.sha256}
                   mono
                   small
                 />
                 <Field
-                  label="배치 pHash 루트"
+                  label="Batch pHash root"
                   value={data.batchMerkleRoots?.phash}
                   mono
                   small
                 />
                 <Field
-                  label="배치 TX / 서명"
+                  label="Batch TX / signature"
                   value={data.batchAnchor?.txHash || data.chainTxSignature}
                   mono
                   small
                 />
                 <MerkleTreeSummary
-                  label="SHA-256 트리"
+                  label="SHA-256 tree"
                   tree={data.merkleTrees?.sha256}
                 />
                 <MerkleTreeSummary
-                  label="pHash 트리"
+                  label="pHash tree"
                   tree={data.merkleTrees?.phash}
                 />
-                <MerkleTreeVizPanel state={merkleViz} />
                 <Field
-                  label="현재 표시 트리"
+                  label="Displayed tree"
                   value={data.merkleTreeType === "phash" ? "pHash" : "SHA-256"}
                 />
                 <Field
-                  label="인덱스 블록"
+                  label="Indexed block"
                   value={
                     data.indexedBlockNumber != null
                       ? String(data.indexedBlockNumber)
@@ -614,21 +711,21 @@ export default function VerifyScreen({
                   }
                   mono
                 />
-                <Field label="봉인 루트" value={data.merkleRoot} mono small />
+                <Field label="Committed root" value={data.merkleRoot} mono small />
                 <Field
-                  label="재계산 루트"
+                  label="Recomputed root"
                   value={data.computedMerkleRoot}
                   mono
                   small
                 />
-                <Field label="리프(직렬화)" value={data.merkleLeafHash} mono small />
+                <Field label="Serialized leaf" value={data.merkleLeafHash} mono small />
                 <Field
-                  label="경로 길이"
+                  label="Path length"
                   value={proofList.length ? String(proofList.length) : "-"}
                 />
                 {proofList.length > 0 ? (
                   <View style={styles.proofBlock}>
-                    <Text style={styles.proofTitle}>이웃 해시</Text>
+                    <Text style={styles.proofTitle}>Sibling hashes</Text>
                     {proofList.map((n, i) => (
                       <Text key={i} style={styles.proofLine} selectable>
                         {i + 1}. {n.position}: {n.hash}
@@ -638,7 +735,7 @@ export default function VerifyScreen({
                 ) : null}
                 {data.batchAnchor?.payload ? (
                   <View style={styles.anchorPayloadBox}>
-                    <Text style={styles.proofTitle}>Solana / DB 앵커 payload</Text>
+                    <Text style={styles.proofTitle}>Solana / DB anchor payload</Text>
                     <Text style={styles.anchorPayloadText} selectable>
                       {prettyJson(data.batchAnchor.payload)}
                     </Text>
@@ -649,7 +746,7 @@ export default function VerifyScreen({
                     style={[styles.outlineBtn, { marginBottom: 12 }]}
                     onPress={() => Linking.openURL(String(data.batchAnchor?.explorerUrl))}
                   >
-                    <Text style={styles.outlineBtnText}>Solana Explorer 열기</Text>
+                    <Text style={styles.outlineBtnText}>Open Solana Explorer</Text>
                   </TouchableOpacity>
                 ) : null}
               </>
@@ -666,7 +763,7 @@ export default function VerifyScreen({
               {verifyingMerkle ? (
                 <ActivityIndicator color={ui.primary} />
               ) : (
-                <Text style={styles.outlineBtnText}>머클 경로 검증</Text>
+                <Text style={styles.outlineBtnText}>Verify Merkle Path</Text>
               )}
             </TouchableOpacity>
             {merkleMsg ? (
@@ -693,7 +790,7 @@ export default function VerifyScreen({
               {rechecking ? (
                 <ActivityIndicator color={ui.primary} />
               ) : (
-                <Text style={styles.outlineBtnText}>서버 재검증</Text>
+                <Text style={styles.outlineBtnText}>Recheck with Server</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -737,6 +834,35 @@ function prettyJson(value: unknown): string {
   }
 }
 
+function summarizeMetadata(value: unknown): string {
+  if (!value || typeof value !== "object") return "-";
+  const meta = value as Record<string, unknown>;
+  const parts: string[] = [];
+
+  const pushIf = (label: string, raw: unknown) => {
+    const text = String(raw ?? "").trim();
+    if (!text) return;
+    parts.push(`${label}: ${text}`);
+  };
+
+  pushIf("Device", meta.deviceModel);
+  pushIf("Maker", meta.deviceMake);
+  pushIf("Software", meta.software);
+  pushIf("Captured", meta.dateTimeOriginal || meta.captureTimestamp);
+  if (meta.standardizedPhoto && typeof meta.standardizedPhoto === "object") {
+    const standardized = meta.standardizedPhoto as Record<string, unknown>;
+    const width = Number(standardized.width);
+    const height = Number(standardized.height);
+    if (Number.isFinite(width) && Number.isFinite(height)) {
+      parts.push(`Standard JPG: ${width}x${height}`);
+    }
+  }
+
+  if (parts.length) return parts.join(" · ");
+  const keys = Object.keys(meta);
+  return keys.length ? `${keys.length} metadata fields` : "-";
+}
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: ui.canvas },
   toolbar: {
@@ -770,6 +896,56 @@ const styles = StyleSheet.create({
     color: ui.textSecondary,
     lineHeight: 19,
     marginBottom: 12,
+  },
+  candidateCard: {
+    borderWidth: 1,
+    borderColor: ui.borderLight,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    backgroundColor: ui.canvas,
+  },
+  candidateHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+    gap: 12,
+  },
+  candidateSerial: {
+    flex: 1,
+    color: ui.text,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  candidateScore: {
+    color: ui.primary,
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  candidateMeta: {
+    color: ui.textSecondary,
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  candidateHash: {
+    color: ui.text,
+    fontSize: 11,
+    lineHeight: 17,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+    marginTop: 4,
+  },
+  candidateFooter: {
+    marginTop: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  candidateProof: {
+    color: ui.textMuted,
+    fontSize: 12,
+    fontWeight: "600",
   },
   primaryBtn: {
     backgroundColor: ui.primary,

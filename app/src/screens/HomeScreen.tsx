@@ -7,12 +7,18 @@ import {
   SafeAreaView,
   StatusBar,
   Platform,
+  Image,
+  ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { ui } from "../theme/tokens";
+import { AnchorMonitorState } from "../hooks/useVerityHash";
+
+const logoImage = require("../../assets/logo.jpg");
 
 interface HomeScreenProps {
   ownerAddress: string;
+  anchorStatus: AnchorMonitorState;
   onNavigateCamera: () => void;
   onNavigateHistory: () => void;
   onNavigateVerify: () => void;
@@ -22,162 +28,109 @@ const cardShadow =
   Platform.OS === "ios"
     ? {
         shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
+        shadowOffset: { width: 0, height: 6 },
         shadowOpacity: 0.06,
-        shadowRadius: 12,
+        shadowRadius: 14,
       }
     : { elevation: 2 };
 
+function ActionCard({
+  icon,
+  title,
+  description,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  description: string;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.actionCard, cardShadow]}
+      onPress={onPress}
+      activeOpacity={0.88}
+    >
+      <View style={styles.actionIconWrap}>
+        <Ionicons name={icon} size={24} color={ui.primary} />
+      </View>
+      <View style={styles.actionTextBlock}>
+        <Text style={styles.actionTitle}>{title}</Text>
+        <Text style={styles.actionDesc}>{description}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color={ui.textMuted} />
+    </TouchableOpacity>
+  );
+}
+
 export default function HomeScreen({
-  ownerAddress,
+  anchorStatus,
   onNavigateCamera,
   onNavigateHistory,
   onNavigateVerify,
 }: HomeScreenProps) {
-  const owner = ownerAddress.trim();
-  const ownerReady = owner.length > 0;
-  const usingFallbackOwner = owner === "demo-owner";
-  const ownerShort =
-    owner.length > 14 ? `${owner.slice(0, 8)}…${owner.slice(-6)}` : owner;
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor={ui.canvas} />
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        bounces={false}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.hero}>
+          <View style={[styles.logoShell, cardShadow]}>
+            <Image source={logoImage} style={styles.logoImage} resizeMode="contain" />
+          </View>
+          <Text style={styles.brand}>Verity</Text>
+          <Text style={styles.tagline}>
+            Capture, anchor, and verify media with SHA-256, pHash, and Merkle proofs.
+          </Text>
+        </View>
 
-      <View style={styles.header}>
-        <Text style={styles.logo}>Verity</Text>
-        <Text style={styles.subtitle}>사진 원본 증명</Text>
-      </View>
+        {anchorStatus.status !== "idle" && anchorStatus.message ? (
+          <View
+            style={[
+              styles.statusCard,
+              anchorStatus.status === "anchored"
+                ? styles.statusCardSuccess
+                : styles.statusCardPending,
+              cardShadow,
+            ]}
+          >
+            <Text style={styles.statusTitle}>
+              {anchorStatus.status === "anchored"
+                ? "Latest batch anchored"
+                : "Batch processing"}
+            </Text>
+            <Text style={styles.statusBody}>{anchorStatus.message}</Text>
+            {anchorStatus.serial ? (
+              <Text style={styles.statusMeta}>Serial: {anchorStatus.serial}</Text>
+            ) : null}
+          </View>
+        ) : null}
 
-      <View style={styles.infoSection}>
-        {ownerReady ? (
-          <View style={[styles.ownerCard, cardShadow]}>
-            <View style={styles.ownerRow}>
-              <View style={styles.ownerIconWrap}>
-                <Ionicons name="person-circle-outline" size={24} color={ui.primary} />
-              </View>
-              <View style={styles.ownerTextBlock}>
-                <Text style={styles.ownerLabel}>등록 소유자 (API owner)</Text>
-                <Text style={styles.ownerValue} selectable>
-                  {ownerShort}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.ownerHint}>
-              {usingFallbackOwner
-                ? "현재는 기본 demo-owner로 동작 중입니다. 실제 서버 owner와 맞추려면 app.json 또는 EXPO_PUBLIC_VERITY_OWNER_ADDRESS를 설정하세요."
-                : "지갑 연동은 메인 서버에서 처리합니다. 빌드 설정의 verityOwnerAddress를 서버와 맞춰 주세요."}
-            </Text>
-          </View>
-        ) : (
-          <View style={[styles.warnCard, cardShadow]}>
-            <Ionicons name="alert-circle-outline" size={22} color={ui.danger} />
-            <Text style={styles.warnTitle}>소유자 주소 미설정</Text>
-            <Text style={styles.warnBody}>
-              app.json의 extra.verityOwnerAddress 또는 환경 변수
-              EXPO_PUBLIC_VERITY_OWNER_ADDRESS에 서버에 등록할 owner 문자열을
-              넣은 뒤 다시 빌드하세요.
-            </Text>
-          </View>
-        )}
-      </View>
-
-      <View style={styles.actions}>
-        <TouchableOpacity
-          style={[
-            styles.actionCard,
-            cardShadow,
-            !ownerReady && styles.actionCardDisabled,
-          ]}
-          onPress={onNavigateCamera}
-          disabled={!ownerReady}
-          activeOpacity={0.85}
-        >
-          <View style={styles.actionIconCircle}>
-            <Ionicons
-              name="camera"
-              size={26}
-              color={ownerReady ? ui.primary : ui.textMuted}
-            />
-          </View>
-          <View style={styles.actionTextBlock}>
-            <Text
-              style={[
-                styles.actionTitle,
-                !ownerReady && styles.actionTitleDisabled,
-              ]}
-            >
-              사진 촬영 & 등록
-            </Text>
-            <Text style={styles.actionDesc}>
-              온디바이스 1차 필터 후 SHA-256 · pHash 선택
-            </Text>
-          </View>
-          <Ionicons
-            name="chevron-forward"
-            size={20}
-            color={ownerReady ? ui.textMuted : ui.border}
+        <View style={styles.actions}>
+          <ActionCard
+            icon="camera"
+            title="Capture"
+            description="Take a photo or record a video and register it automatically."
+            onPress={onNavigateCamera}
           />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[
-            styles.actionCard,
-            cardShadow,
-            !ownerReady && styles.actionCardDisabled,
-          ]}
-          onPress={onNavigateHistory}
-          disabled={!ownerReady}
-          activeOpacity={0.85}
-        >
-          <View style={[styles.actionIconCircle, styles.actionIconCircleAlt]}>
-            <Ionicons
-              name="time-outline"
-              size={26}
-              color={ownerReady ? ui.success : ui.textMuted}
-            />
-          </View>
-          <View style={styles.actionTextBlock}>
-            <Text
-              style={[
-                styles.actionTitle,
-                !ownerReady && styles.actionTitleDisabled,
-              ]}
-            >
-              등록 히스토리
-            </Text>
-            <Text style={styles.actionDesc}>
-              검증 URL · QR이 포함된 기록
-            </Text>
-          </View>
-          <Ionicons
-            name="chevron-forward"
-            size={20}
-            color={ownerReady ? ui.textMuted : ui.border}
+          <ActionCard
+            icon="shield-checkmark-outline"
+            title="Verify"
+            description="Check an existing record with hashes, Merkle proof, and metadata."
+            onPress={onNavigateVerify}
           />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.actionCard, cardShadow]}
-          onPress={onNavigateVerify}
-          activeOpacity={0.85}
-        >
-          <View style={[styles.actionIconCircle, styles.actionIconCircleVerify]}>
-            <Ionicons name="shield-checkmark-outline" size={26} color={ui.primary} />
-          </View>
-          <View style={styles.actionTextBlock}>
-            <Text style={styles.actionTitle}>검증 조회</Text>
-            <Text style={styles.actionDesc}>
-              토큰으로 머클·해시 결과 조회 (소유자 설정 불필요)
-            </Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={ui.textMuted} />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>Verity</Text>
-      </View>
+          <ActionCard
+            icon="time-outline"
+            title="History"
+            description="Review registered items and open their verification pages."
+            onPress={onNavigateHistory}
+          />
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -187,143 +140,111 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: ui.canvas,
   },
-  header: {
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+  },
+  hero: {
     alignItems: "center",
-    paddingTop: 20,
+    paddingTop: 18,
     paddingBottom: 28,
   },
-  logo: {
+  logoShell: {
+    width: 148,
+    height: 148,
+    borderRadius: 36,
+    backgroundColor: ui.surface,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 18,
+    padding: 18,
+  },
+  logoImage: {
+    width: 112,
+    height: 112,
+  },
+  brand: {
     fontSize: 34,
     fontWeight: "800",
     color: ui.text,
-    letterSpacing: -0.5,
+    letterSpacing: -0.7,
   },
-  subtitle: {
+  tagline: {
+    marginTop: 10,
     fontSize: 15,
+    lineHeight: 22,
     color: ui.textSecondary,
-    marginTop: 8,
-    fontWeight: "500",
+    textAlign: "center",
+    maxWidth: 300,
   },
-  infoSection: {
-    paddingHorizontal: 20,
-    marginBottom: 28,
-  },
-  ownerCard: {
-    backgroundColor: ui.surface,
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: ui.borderLight,
-  },
-  ownerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  ownerIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: ui.primarySoft,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  ownerTextBlock: { flex: 1 },
-  ownerLabel: {
-    fontSize: 12,
-    color: ui.textSecondary,
-    fontWeight: "600",
-    marginBottom: 4,
-  },
-  ownerValue: {
-    fontSize: 15,
-    color: ui.text,
-    fontWeight: "700",
-  },
-  ownerHint: {
-    marginTop: 14,
-    fontSize: 13,
-    color: ui.textSecondary,
-    lineHeight: 19,
-  },
-  warnCard: {
-    backgroundColor: ui.surface,
+  statusCard: {
     borderRadius: 20,
     padding: 18,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: ui.borderLight,
-    gap: 8,
   },
-  warnTitle: {
-    fontSize: 16,
-    fontWeight: "700",
+  statusCardPending: {
+    backgroundColor: ui.warningSoft,
+    borderColor: ui.warning,
+  },
+  statusCardSuccess: {
+    backgroundColor: ui.successSoft,
+    borderColor: ui.success,
+  },
+  statusTitle: {
     color: ui.text,
+    fontSize: 15,
+    fontWeight: "800",
+    marginBottom: 6,
   },
-  warnBody: {
-    fontSize: 13,
+  statusBody: {
     color: ui.textSecondary,
+    fontSize: 13,
     lineHeight: 19,
-    marginTop: 4,
+  },
+  statusMeta: {
+    marginTop: 8,
+    color: ui.textMuted,
+    fontSize: 12,
+    fontWeight: "600",
   },
   actions: {
-    paddingHorizontal: 20,
-    gap: 12,
+    gap: 14,
+    marginTop: 10,
   },
   actionCard: {
     backgroundColor: ui.surface,
-    borderRadius: 18,
-    paddingVertical: 18,
-    paddingHorizontal: 16,
+    borderRadius: 20,
+    padding: 18,
     borderWidth: 1,
     borderColor: ui.borderLight,
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
   },
-  actionCardDisabled: {
-    opacity: 0.45,
-  },
-  actionIconCircle: {
-    width: 52,
-    height: 52,
+  actionIconWrap: {
+    width: 48,
+    height: 48,
     borderRadius: 16,
     backgroundColor: ui.primarySoft,
     alignItems: "center",
     justifyContent: "center",
   },
-  actionIconCircleAlt: {
-    backgroundColor: ui.successSoft,
-  },
-  actionIconCircleVerify: {
-    backgroundColor: ui.primarySoft,
-  },
   actionTextBlock: {
     flex: 1,
   },
   actionTitle: {
-    fontSize: 17,
-    fontWeight: "700",
     color: ui.text,
+    fontSize: 16,
+    fontWeight: "700",
     marginBottom: 4,
   },
-  actionTitleDisabled: {
-    color: ui.textMuted,
-  },
   actionDesc: {
-    fontSize: 14,
     color: ui.textSecondary,
-    lineHeight: 20,
-    fontWeight: "400",
-  },
-  footer: {
-    flex: 1,
-    justifyContent: "flex-end",
-    alignItems: "center",
-    paddingBottom: 20,
-  },
-  footerText: {
-    color: ui.textMuted,
-    fontSize: 12,
-    fontWeight: "500",
+    fontSize: 13,
+    lineHeight: 19,
   },
 });

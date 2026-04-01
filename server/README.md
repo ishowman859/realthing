@@ -7,7 +7,7 @@
 - `POST /v1/assets` 자산 등록 (sha256/phash, 촬영 시각 기준 분 버킷)
 - `POST /v1/ingest/sha256` 기기 SHA-256 수집 (**서버 수신 시각** 기준 1분 버킷). 선택: `phash`(16hex), `mediaType`(photo|video), 동영상 키프레임은 `metadata.videoPhashKeyframes`
 - `GET /v1/assets?owner=...` 내 자산 목록 조회
-- `POST /v1/anti-spoof/check` Silent-Face-Anti-Spoofing 스푸핑 점수 조회
+- `GET /v1/verify/lookup?sha256=...` **파일 SHA-256(hex)** 으로 등록 기록 조회 (검증 웹에서 브라우저가 해시 계산 후 호출). `mode=sha256` 이고 동일 해시가 없으면 404
 - `GET /v1/verify/:token` 검증 페이지 조회 데이터
 - `POST /v1/verify/:token/recheck` 재검증
 - `POST /v1/verify/upload` **multipart** `file` 필드 — 사진/동영상 바이트로 SHA-256·(이미지면 8×8 평균 해시) 계산 후 `phash` 모드로 등록, `{ asset, verification }` JSON 반환 (검증 웹 업로드용)
@@ -19,7 +19,7 @@
 조회/재검증 시 해당 블록 배치의 머클트리에서 리프 포함 여부를 다시 검증합니다.  
 `GET /v1/verify/:token` 응답에는 브라우저가 리프를 재계산할 수 있도록 **`assetId`**(내부 UUID)와 **`merkleProof`**(이웃 해시 경로), **`merkleRoot`** 가 포함됩니다. 정적 검증 페이지에서 Web Crypto로 경로를 직접 이어 붙여 루트를 맞출 수 있습니다.
 
-### Solana 머클 앵커 (devnet / mainnet)
+### Solana 머클 앵커 (mainnet / devnet)
 
 `SOLANA_RPC_URL` 과 `SOLANA_MERKLE_KEYPAIR`(또는 `SOLANA_MERKLE_KEYPAIR_PATH`)가 모두 설정되면, 배치가 봉인될 때 **메모 프로그램**(`MemoSq4…`)으로 트랜잭션을 보내 문자열  
 `verity:merkle:v1|{batchId}|{merkleRootHex}`  
@@ -54,7 +54,6 @@ npm run dev
 - `src/batchActivity.js`: 수집 API 활동 시각(유휴 시 머클 스케줄 스킵)
 - `src/index.js`: 로컬 개발용 실행 엔트리(`listen`, 5초마다 `processMinuteBatches`)
 - `api/index.js`: Vercel Serverless Function 엔트리
-- `ai/`: Silent-Face-Anti-Spoofing 추론 서버(ONNX)
 
 로컬에서는 `src/index.js`를 실행하고, Vercel에서는 `api/index.js`가 호출됩니다.
 
@@ -66,7 +65,6 @@ npm run dev
    - `DATABASE_URL` (필수)
    - `VERIFY_BASE_URL` (권장)
    - `CORS_ORIGIN` (권장: 프론트 도메인)
-   - `SILENT_FACE_API_URL` (선택: anti-spoof 추론 서버)
 4. Deploy
 
 배포 후 다음 API를 사용할 수 있습니다.
@@ -75,7 +73,6 @@ npm run dev
 - `POST /v1/assets`
 - `POST /v1/ingest/sha256`
 - `GET /v1/assets?owner=...`
-- `POST /v1/anti-spoof/check`
 - `GET /v1/verify/:token`
 - `POST /v1/verify/:token/recheck`
 - `POST /v1/verify/upload` (multipart `file`, 선택 `owner`)
@@ -98,25 +95,18 @@ API 서버와 같은 프로세스에서 **저장소 루트의 `index.html`·`scr
 - `VERIFY_BASE_URL` (기본: `https://verify.verity.app/v` — 자가 호스팅 시 위처럼 본인 `/v` URL로 변경)
 - `VERIFY_STATIC_DIR` (선택: 검증 UI 정적 파일이 있는 디렉터리, 기본은 저장소 루트)
 - `ADMIN_TOKEN` (선택: `/admin`, `/v1/admin/*` 보호용)
-- `SILENT_FACE_API_URL` (선택: Silent-Face-Anti-Spoofing 추론 서버 URL)
 - `AWS_*`, `S3_BUCKET` (선택: 업로드 파일 S3 저장)
 - `SOLANA_RPC_URL`, `SOLANA_MERKLE_KEYPAIR` / `SOLANA_MERKLE_KEYPAIR_PATH` (선택: 머클 루트 Solana 메모 앵커)
-- `SOLANA_CLUSTER` (선택: `devnet` / `mainnet-beta` / `testnet`, 미설정 시 RPC URL로 추정)
+- `SOLANA_CLUSTER` (선택: `mainnet-beta` / `devnet` / `testnet`, 미설정 시 RPC URL로 추정)
 - `SOLANA_COMMITMENT` (선택: `confirmed` 기본)
 - `SOLANA_ANCHOR_DISABLED=1` (선택: 앵커 끄기)
-
-예시:
-
-```env
-SILENT_FACE_API_URL=http://localhost:8001/predict
-```
 
 ## 비고
 
 - `POST /v1/assets`, `POST /v1/ingest/sha256`, `POST /v1/verify/upload`는 **IP당** 슬라이딩 윈도우로
   기본 **1분에 3회** 업로드(등록) 제한(`UPLOAD_RATE_LIMIT_PER_MINUTE`, `UPLOAD_RATE_WINDOW_MS`, 429 + `retryAfterMs`).
   세 경로 **합산**으로 카운트합니다.
-- `POST /v1/assets`, `POST /v1/ingest/sha256`, `POST /v1/verify/upload`, `POST /v1/anti-spoof/check`에는
+- `POST /v1/assets`, `POST /v1/ingest/sha256`, `POST /v1/verify/upload`에는
   별도로 1초 1회 제한(키: IP/owner 등)이 걸려 있습니다.
 - 검증 API의 `chainVerified`는 **DB 내 머클 일관성**(리프·경로·루트 재계산) 기준입니다. Solana 앵커가 성공하면 `chainTxSignature`에 **실제 서명(base58)** 이 들어가며, 익스플로러에서 메모 내용을 확인할 수 있습니다. (클라이언트가 RPC로 메모를 재검증하는 단계는 선택 구현입니다.)
 - `phash` 유사도는 DB 후보군에 대해 해밍거리로 계산하는 MVP 방식이며,

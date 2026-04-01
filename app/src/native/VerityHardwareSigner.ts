@@ -12,8 +12,8 @@ type NativeSignerModule = {
 };
 
 const LINK_ERROR =
-  "VerityHardwareSigner 네이티브 모듈이 연결되지 않았습니다. " +
-  "Expo 프로젝트라면 `npx expo prebuild` 후 Android/iOS 네이티브 빌드를 다시 진행하세요.";
+  "The VerityHardwareSigner native module is not linked. " +
+  "If this is an Expo project, run `npx expo prebuild` and rebuild the Android/iOS native app.";
 
 const NativeSigner = NativeModules.VerityHardwareSigner as NativeSignerModule | undefined;
 
@@ -28,17 +28,17 @@ export async function createOrGetHardwareKey(alias: string): Promise<string> {
   const mod = requireNative();
   if (Platform.OS === "android") {
     if (!mod.createOrGetStrongBoxKey) {
-      throw new Error("Android StrongBox 메서드가 없습니다.");
+      throw new Error("Android StrongBox support is unavailable.");
     }
     return mod.createOrGetStrongBoxKey(alias);
   }
   if (Platform.OS === "ios") {
     if (!mod.createOrGetSecureEnclaveKey) {
-      throw new Error("iOS Secure Enclave 메서드가 없습니다.");
+      throw new Error("iOS Secure Enclave support is unavailable.");
     }
     return mod.createOrGetSecureEnclaveKey(alias);
   }
-  throw new Error("현재 플랫폼은 하드웨어 서명을 지원하지 않습니다.");
+  throw new Error("Hardware-backed signing is not supported on this platform.");
 }
 
 export async function signWithHardware(

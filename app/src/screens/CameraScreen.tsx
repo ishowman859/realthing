@@ -25,7 +25,6 @@ import {
   runFirstStageFilter,
 } from "../utils/firstStageFilter";
 import { HashMode } from "../utils/verityApi";
-import { stampMonitorWatermark } from "../utils/monitorWatermark";
 import {
   standardizePhotoForHashing,
   StandardizedPhotoMeta,
@@ -52,6 +51,7 @@ interface CaptureContext {
 
 interface CameraScreenProps {
   status: RegistrationStatus;
+  statusMessageOverride?: string | null;
   currentPhash: string | null;
   currentSha256: string | null;
   txSignature: string | null;
@@ -72,18 +72,19 @@ interface CameraScreenProps {
 
 const STATUS_LABELS: Record<RegistrationStatus, string> = {
   idle: "",
-  computing_hash: "pHash / SHA-256 계산 중...",
-  building_tx: "처리 준비 중...",
-  awaiting_signature: "서버 전송 준비 중...",
-  confirming: "서버에 등록 중...",
-  success: "등록 완료, 10초 배치 앵커 대기 중...",
-  error: "오류 발생",
+  computing_hash: "Computing pHash and SHA-256...",
+  building_tx: "Preparing registration...",
+  awaiting_signature: "Preparing upload...",
+  confirming: "Submitting to the server...",
+  success: "Registered. Waiting for batch anchoring...",
+  error: "Something went wrong",
 };
 
 type LibrarySaveState = "idle" | "ready" | "saving" | "saved" | "error";
 
 export default function CameraScreen({
   status,
+  statusMessageOverride,
   currentPhash,
   currentSha256,
   txSignature,
@@ -97,7 +98,8 @@ export default function CameraScreen({
 }: CameraScreenProps) {
   const cameraRef = useRef<CameraView>(null);
   const lastRegisterAtRef = useRef(0);
-  /** 동일 촬영·해시 조합으로 갤러리에 한 번만 저장 (Strict Mode 이중 effect 방지) */
+  const lastAutoRegisterKeyRef = useRef<string | null>(null);
+  /** Save each captured file to the library only once per hash combination. */
   const lastLibrarySaveKeyRef = useRef<string | null>(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
@@ -113,7 +115,6 @@ export default function CameraScreen({
   const [isRecording, setIsRecording] = useState(false);
   const [selectedShareVariant, setSelectedShareVariant] =
     useState<ShareVariant>("proved");
-  const [monitorCaptureMode, setMonitorCaptureMode] = useState(false);
   const [mediaLibraryGranted, setMediaLibraryGranted] = useState<boolean | null>(null);
   const [isRequestingLibraryPermission, setIsRequestingLibraryPermission] =
     useState(false);
@@ -128,8 +129,8 @@ export default function CameraScreen({
       setMediaLibraryGranted(granted);
       if (!granted) {
         Alert.alert(
-          "미디어 보관함",
-          "기기에 등록 기준 표준 JPG/영상 촬영본을 저장하려면 사진/영상 보관함 권한을 허용해 주세요."
+          "Media library",
+          "Allow photo/video library access to save the registered media to your device."
         );
       }
       return granted;
@@ -181,8 +182,8 @@ export default function CameraScreen({
     setLibrarySaveState("saving");
       setLibrarySaveMessage(
         capturedMediaType === "video"
-          ? "등록 기준 원본 영상을 Verity 앨범에 저장하고 있습니다..."
-          : "등록 기준 표준 JPG 사진을 Verity 앨범에 저장하고 있습니다..."
+          ? "Saving the registered source video to your Verity album..."
+          : "Saving the standardized JPG to your Verity album..."
       );
 
     try {
@@ -193,7 +194,7 @@ export default function CameraScreen({
       if (!granted) {
         setLibrarySaveState("idle");
         setLibrarySaveMessage(
-          "보관함 권한을 허용하면 등록된 촬영본을 기기에 저장할 수 있습니다."
+          "Allow media-library access to save the registered file to your device."
         );
         return;
       }
@@ -207,16 +208,16 @@ export default function CameraScreen({
       setLibrarySaveState("saved");
       setLibrarySaveMessage(
         capturedMediaType === "video"
-          ? "원본 영상이 Verity 앨범에 저장되었습니다. 검증은 이 원본 파일로 다시 올리면 됩니다."
-          : "표준 JPG 사진이 Verity 앨범에 저장되었습니다. 검증은 이 JPG 파일로 다시 올리면 됩니다."
+          ? "The source video was saved to your Verity album. Use this file again for verification."
+          : "The standardized JPG was saved to your Verity album. Use this JPG again for verification."
       );
     } catch (e) {
       console.warn("saveToLibraryAsync", e);
       setLibrarySaveState("error");
       setLibrarySaveMessage(
         capturedMediaType === "video"
-          ? "영상 저장에 실패했습니다. 다시 시도해 주세요."
-          : "사진 저장에 실패했습니다. 다시 시도해 주세요."
+          ? "We could not save the video. Please try again."
+          : "We could not save the photo. Please try again."
       );
     }
   };
@@ -224,8 +225,40 @@ export default function CameraScreen({
   useEffect(() => {
     if (status !== "success" || !capturedUri || mediaLibraryGranted !== true) return;
     if (librarySaveState === "saved" || librarySaveState === "saving") return;
-    void saveCurrentMediaToLibrary(false);
-  }, [status, capturedUri, mediaLibraryGranted]);
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      void saveCurrentMediaToLibrary(false);
+    }, 700);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [status, capturedUri, mediaLibraryGranted, librarySaveState]);
+
+  useEffect(() => {
+    if (!capturedUri || capturedMediaType !== "photo") return;
+    if (status !== "idle" || isAnalyzing) return;
+    if (!captureContext) return;
+    if (filterResult?.decision === "reject") return;
+
+    const autoKey = [
+      capturedUri,
+      capturedMediaType,
+      captureContext.captureTimestamp,
+    ].join("|");
+    if (lastAutoRegisterKeyRef.current === autoKey) return;
+    lastAutoRegisterKeyRef.current = autoKey;
+
+    void handleRegister("sha256", { autoProceedWarn: true });
+  }, [
+    capturedUri,
+    capturedMediaType,
+    status,
+    isAnalyzing,
+    captureContext,
+    filterResult,
+  ]);
 
   if (!permission) {
     return (
@@ -244,14 +277,14 @@ export default function CameraScreen({
             <Ionicons name="camera-outline" size={40} color={ui.primary} />
           </View>
           <Text style={styles.permissionText}>
-            카메라 권한이 필요해요
+            Camera access is required
           </Text>
           <TouchableOpacity
             style={styles.permissionButton}
             onPress={requestPermission}
             activeOpacity={0.88}
           >
-            <Text style={styles.permissionButtonText}>허용하기</Text>
+            <Text style={styles.permissionButtonText}>Allow access</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -269,11 +302,8 @@ export default function CameraScreen({
       });
 
       if (photo?.uri) {
-        const processedUri = monitorCaptureMode
-          ? await stampMonitorWatermark(photo.uri)
-          : photo.uri;
         const standardizedPhoto = await standardizePhotoForHashing({
-          uri: processedUri,
+          uri: photo.uri,
           width: photo.width,
           height: photo.height,
         });
@@ -286,22 +316,17 @@ export default function CameraScreen({
         setFilterResult(null);
         setIsAnalyzing(true);
         try {
-          const result = await runFirstStageFilter(processedUri, {
-            // [각주1] 모니터 촬영 모드에서는 모아레(주기성) 감지를 건너뜁니다.
-            skipPeriodicity: monitorCaptureMode,
-          });
+          const result = await runFirstStageFilter(photo.uri);
           setFilterResult(result);
         } catch {
           setFilterResult({
             decision: "warn",
             score: 40,
-            reasons: ["1차 필터 분석에 실패해 보수적으로 재촬영을 권장합니다."],
+            reasons: ["The first-pass filter failed, so a retake is recommended."],
             metrics: {
               blurVariance: 0,
               periodicityScore: 0,
               metadataRisk: 0,
-              antiSpoofScore: null,
-              antiSpoofModel: null,
             },
           });
         } finally {
@@ -309,7 +334,7 @@ export default function CameraScreen({
         }
       }
     } catch (err) {
-      Alert.alert("오류", "사진 촬영에 실패했습니다");
+      Alert.alert("Error", "Photo capture failed.");
     }
   };
 
@@ -321,7 +346,6 @@ export default function CameraScreen({
     setIsAnalyzing(false);
     if (nextType === "video") {
       setSelectedShareVariant("original");
-      setMonitorCaptureMode(false);
     }
   };
 
@@ -344,7 +368,7 @@ export default function CameraScreen({
         });
       }
     } catch (err) {
-      Alert.alert("오류", "영상 촬영에 실패했습니다");
+      Alert.alert("Error", "Video recording failed.");
     } finally {
       setIsRecording(false);
     }
@@ -355,47 +379,69 @@ export default function CameraScreen({
     try {
       cameraRef.current.stopRecording();
     } catch (err) {
-      Alert.alert("오류", "영상 촬영을 종료하지 못했습니다");
+      Alert.alert("Error", "Could not stop video recording.");
       setIsRecording(false);
     }
   };
 
-  const handleRegister = async (mode: HashMode) => {
+  const handleRegister = async (
+    mode: HashMode,
+    options?: { autoProceedWarn?: boolean }
+  ) => {
     if (!capturedUri) return;
     if (capturedMediaType === "video" && mode === "phash") {
-      Alert.alert("안내", "영상은 SHA-256 + pHash 키프레임 경로로 등록됩니다.");
+      Alert.alert("Info", "Videos are registered with SHA-256 plus representative pHash keyframes.");
       return;
     }
 
     const now = Date.now();
     const elapsedMs = now - lastRegisterAtRef.current;
     if (elapsedMs < 1000) {
-      Alert.alert("잠시만요", "미디어 등록은 1초에 1회만 가능합니다.");
+      Alert.alert("Please wait", "Media registration is limited to once per second.");
       return;
     }
 
     if (isAnalyzing) {
-      Alert.alert("검증 중", "미디어 검증이 끝난 뒤 등록할 수 있습니다.");
+      Alert.alert("Analyzing", "Wait until analysis finishes before registering.");
       return;
     }
 
     if (filterResult?.decision === "reject") {
       Alert.alert(
-        "재촬영 필요",
-        "화면 재촬영 의심 신호가 강해 등록을 막았습니다. 다른 각도/거리에서 다시 촬영해주세요."
+        "Retake required",
+        "Strong warning signals were detected, so registration was blocked. Please retake the media."
       );
       return;
     }
 
     if (filterResult?.decision === "warn") {
+      if (options?.autoProceedWarn) {
+        lastRegisterAtRef.current = Date.now();
+        await onRegisterPhoto(
+          capturedUri,
+          mode,
+          filterResult?.score,
+          {
+            blurVariance: filterResult?.metrics.blurVariance ?? null,
+            periodicityScore: filterResult?.metrics.periodicityScore ?? null,
+            metadataRisk: filterResult?.metrics.metadataRisk ?? null,
+            captureMediaType: capturedMediaType,
+            captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
+            gps: captureContext?.gps ?? null,
+            standardizedPhoto: captureContext?.standardizedPhoto ?? null,
+          },
+          { mediaType: capturedMediaType }
+        );
+        return;
+      }
       const message =
         filterResult.reasons.length > 0
           ? filterResult.reasons.join("\n")
-          : "재촬영 의심 신호가 일부 감지되었습니다.";
-      Alert.alert("주의", `${message}\n\n그래도 등록을 진행할까요?`, [
-        { text: "다시 촬영", style: "cancel" },
+          : "Some warning signals were detected.";
+      Alert.alert("Warning", `${message}\n\nDo you still want to continue?`, [
+        { text: "Retake", style: "cancel" },
         {
-          text: "계속 진행",
+          text: "Continue",
           style: "default",
           onPress: () => {
             lastRegisterAtRef.current = Date.now();
@@ -407,10 +453,6 @@ export default function CameraScreen({
                 blurVariance: filterResult?.metrics.blurVariance ?? null,
                 periodicityScore: filterResult?.metrics.periodicityScore ?? null,
                 metadataRisk: filterResult?.metrics.metadataRisk ?? null,
-                antiSpoofScore: filterResult?.metrics.antiSpoofScore ?? null,
-                antiSpoofModel: filterResult?.metrics.antiSpoofModel ?? null,
-                monitorCaptureMode,
-                monitorWatermarkApplied: monitorCaptureMode,
                 captureMediaType: capturedMediaType,
                 captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
                 gps: captureContext?.gps ?? null,
@@ -429,10 +471,6 @@ export default function CameraScreen({
       blurVariance: filterResult?.metrics.blurVariance ?? null,
       periodicityScore: filterResult?.metrics.periodicityScore ?? null,
       metadataRisk: filterResult?.metrics.metadataRisk ?? null,
-      antiSpoofScore: filterResult?.metrics.antiSpoofScore ?? null,
-      antiSpoofModel: filterResult?.metrics.antiSpoofModel ?? null,
-      monitorCaptureMode,
-      monitorWatermarkApplied: monitorCaptureMode,
       captureMediaType: capturedMediaType,
       captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
       gps: captureContext?.gps ?? null,
@@ -442,12 +480,12 @@ export default function CameraScreen({
 
   const handleRetake = () => {
     lastLibrarySaveKeyRef.current = null;
+    lastAutoRegisterKeyRef.current = null;
     setCapturedUri(null);
     setFilterResult(null);
     setIsAnalyzing(false);
     setCaptureContext(null);
     setSelectedShareVariant("proved");
-    setMonitorCaptureMode(false);
     setCapturedMediaType(cameraMode === "video" ? "video" : "photo");
     setLibrarySaveState("idle");
     setLibrarySaveMessage(null);
@@ -463,23 +501,23 @@ export default function CameraScreen({
   const handleShare = async () => {
     if (!verificationUrl) return;
     await Share.share({
-      message: `proved by verity\n선택한 공유 스타일: ${
-        selectedShareVariant === "proved" ? "PROVED 테두리" : "표준 JPG"
-      }\n검증 링크: ${verificationUrl}`,
+        message: `proved by verity\nSelected share style: ${
+          selectedShareVariant === "proved" ? "proved frame" : "standard JPG"
+        }\nverification link: ${verificationUrl}`,
     });
   };
 
   const handleShareQr = async () => {
     if (!qrCodeUrl) return;
     await Share.share({
-      message: `verity 검증 QR\n${verificationUrl ?? ""}\n${qrCodeUrl}`,
+      message: `Verity verification QR\n${verificationUrl ?? ""}\n${qrCodeUrl}`,
       url: qrCodeUrl,
     });
   };
 
   const isPhotoCapture = capturedMediaType === "photo";
 
-  // 촬영 완료 후 결과/등록 화면
+  // Result / registration screen after capture
   if (capturedUri) {
     return (
       <SafeAreaView style={styles.container}>
@@ -488,7 +526,7 @@ export default function CameraScreen({
           <TouchableOpacity onPress={onBack} disabled={isProcessing}>
             <Ionicons name="arrow-back" size={24} color={ui.text} />
           </TouchableOpacity>
-          <Text style={styles.topBarTitle}>등록</Text>
+        <Text style={styles.topBarTitle}>Register</Text>
           <View style={{ width: 28 }} />
         </View>
 
@@ -507,7 +545,7 @@ export default function CameraScreen({
                   onPress={() => setSelectedShareVariant("original")}
                 >
                   <Image source={{ uri: capturedUri }} style={styles.variantThumb} />
-                  <Text style={styles.variantLabel}>표준 JPG</Text>
+                  <Text style={styles.variantLabel}>Standard JPG</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -523,7 +561,7 @@ export default function CameraScreen({
                       <Text style={styles.provedBadgeText}>PROVED BY VERITY</Text>
                     </View>
                   </View>
-                  <Text style={styles.variantLabel}>PROVED 테두리</Text>
+                  <Text style={styles.variantLabel}>Proved frame</Text>
                 </TouchableOpacity>
               </View>
 
@@ -541,9 +579,9 @@ export default function CameraScreen({
           ) : (
             <View style={styles.videoPreviewCard}>
               <Ionicons name="videocam" size={36} color={ui.primary} />
-              <Text style={styles.videoPreviewTitle}>영상 촬영 완료</Text>
+              <Text style={styles.videoPreviewTitle}>Video captured</Text>
               <Text style={styles.videoPreviewDesc}>
-                이 영상으로 SHA-256과 대표 pHash 키프레임을 계산해 등록합니다.
+                This video will be registered with SHA-256 and representative pHash keyframes.
               </Text>
               <Text style={styles.videoPreviewUri} numberOfLines={2}>
                 {capturedUri}
@@ -554,28 +592,13 @@ export default function CameraScreen({
             </View>
           )}
 
-          {monitorCaptureMode && isPhotoCapture && (
-            <View style={styles.monitorBadge}>
-              <Text style={styles.monitorBadgeText}>
-                MONITOR 워터마크 적용됨 (해시 생성에 포함)
-              </Text>
-            </View>
-          )}
-
           {isAnalyzing && (
             <View style={styles.filterCard}>
               <ActivityIndicator size="small" color={ui.primary} />
-              <Text style={styles.filterCardTitle}>1차 필터 검증 중...</Text>
+              <Text style={styles.filterCardTitle}>Running first-pass checks...</Text>
               <Text style={styles.filterCardDesc}>
-                {monitorCaptureMode
-                  ? "모니터 촬영 모드로 블러/메타데이터 중심 검증을 진행하고 있습니다."
-                  : "화면 재촬영 가능성(블러/패턴/메타데이터)을 검사하고 있습니다."}
+                Checking blur, repeating patterns, and metadata before registration.
               </Text>
-              {monitorCaptureMode && (
-                <Text style={styles.filterReason}>
-                  • 모니터 촬영 모드: 모아레(주기성) 감지는 비활성화됩니다.
-                </Text>
-              )}
             </View>
           )}
 
@@ -591,20 +614,29 @@ export default function CameraScreen({
               ]}
             >
               <Text style={styles.filterCardTitle}>
-                1차 필터 점수: {filterResult.score}/100
+                First-pass score: {filterResult.score}/100
               </Text>
               <Text style={styles.filterCardDesc}>
                 {filterResult.decision === "pass"
-                  ? "문제 신호가 낮아 등록을 진행할 수 있습니다."
+                  ? "No major warning signals were detected."
                   : filterResult.decision === "warn"
-                  ? "의심 신호가 일부 감지되었습니다. 재촬영 권장."
-                  : "의심 신호가 강해 등록이 차단됩니다."}
+                  ? "Some warning signals were detected. A retake is recommended."
+                  : "Strong warning signals were detected. Registration is blocked."}
               </Text>
               {filterResult.reasons.slice(0, 2).map((reason) => (
                 <Text key={reason} style={styles.filterReason}>
                   • {reason}
                 </Text>
               ))}
+            </View>
+          )}
+
+          {status === "idle" && isPhotoCapture && (
+            <View style={styles.libraryCard}>
+              <Text style={styles.libraryCardTitle}>Auto registration</Text>
+              <Text style={styles.libraryCardDesc}>
+                Photos are standardized to JPG and registered automatically right after capture.
+              </Text>
             </View>
           )}
 
@@ -635,17 +667,19 @@ export default function CameraScreen({
                 />
               )}
 
-              <Text style={styles.statusText}>{STATUS_LABELS[status]}</Text>
+              <Text style={styles.statusText}>
+                {statusMessageOverride || STATUS_LABELS[status]}
+              </Text>
               {hashMode && (
                 <Text style={styles.modeMetaText}>
-                  등록 모드: {hashMode === "sha256" ? "SHA-256" : "pHash"}
+                  Mode: {hashMode === "sha256" ? "SHA-256" : "pHash"}
                 </Text>
               )}
               {status === "success" && (currentSha256 || currentPhash) ? (
                 <Text style={styles.saveHintText}>
                   {capturedMediaType === "video"
-                    ? "등록된 원본 영상을 Verity 앨범에 저장합니다. 해시값은 파일 위에 새기지 않고, 머클 배치 정보는 검증 페이지에서 확인합니다."
-                    : "등록된 표준 JPG 사진을 Verity 앨범에 저장합니다. 해시값은 파일 위에 새기지 않고, 머클 배치 정보는 검증 페이지에서 확인합니다."}
+                    ? "The registered source video can be saved to your Verity album. Hash values are not embedded into the file."
+                    : "The registered standardized JPG can be saved to your Verity album. Hash values are not embedded into the file."}
                 </Text>
               ) : null}
 
@@ -676,29 +710,29 @@ export default function CameraScreen({
 
               {verificationUrl && (
                 <View style={styles.hashContainer}>
-                  <Text style={styles.hashLabel}>검증 URL</Text>
+                  <Text style={styles.hashLabel}>Verification URL</Text>
                   <Text style={styles.hashValue} numberOfLines={1}>
                     {verificationUrl}
                   </Text>
                   <Text style={styles.anchorHintText}>
-                    서버가 약 10초 단위로 SHA-256 / pHash 머클트리를 묶어 Solana에 루트를 앵커링합니다.
-                    잠시 후 검증 페이지에서 두 트리 상태를 확인할 수 있습니다.
+                    The server batches SHA-256 and pHash Merkle trees roughly every 10 seconds and anchors the roots on Solana.
+                    You can confirm the tree state on the verification page shortly after.
                   </Text>
                   <TouchableOpacity
                     style={styles.linkButton}
                     onPress={() => Linking.openURL(verificationUrl)}
                   >
-                    <Text style={styles.linkButtonText}>검증 페이지 열기</Text>
+                    <Text style={styles.linkButtonText}>Open verification page</Text>
                   </TouchableOpacity>
                 </View>
               )}
 
               {qrCodeUrl && (
                 <View style={styles.hashContainer}>
-                  <Text style={styles.hashLabel}>QR 코드</Text>
+                  <Text style={styles.hashLabel}>QR code</Text>
                   <Image source={{ uri: qrCodeUrl }} style={styles.qrImage} />
                   <TouchableOpacity style={styles.linkButton} onPress={handleShareQr}>
-                    <Text style={styles.linkButtonText}>QR 이미지 공유</Text>
+                    <Text style={styles.linkButtonText}>Share QR image</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -716,13 +750,13 @@ export default function CameraScreen({
                   : styles.libraryCardPending,
               ]}
             >
-              <Text style={styles.libraryCardTitle}>기기 저장</Text>
+              <Text style={styles.libraryCardTitle}>Save to device</Text>
               <Text style={styles.libraryCardDesc}>
                 {librarySaveMessage
                   ? librarySaveMessage
                   : mediaLibraryGranted === true
-                    ? "등록이 완료되면 표준 JPG 촬영본이 기기 보관함의 Verity 앨범에 저장됩니다."
-                    : "기기에 저장하려면 사진/영상 보관함 권한을 허용해 주세요."}
+                    ? "Once registration completes, the file can be saved to the Verity album on your device."
+                    : "Allow photo/video library access to save the registered file."}
               </Text>
               {status === "success" ? (
                 <TouchableOpacity
@@ -736,14 +770,14 @@ export default function CameraScreen({
                 >
                   <Text style={styles.libraryPermissionButtonText}>
                     {isRequestingLibraryPermission
-                      ? "권한 요청 중..."
+                      ? "Requesting access..."
                       : librarySaveState === "saving"
-                        ? "저장 중..."
+                        ? "Saving..."
                         : librarySaveState === "saved"
-                          ? "저장 완료"
+                          ? "Saved"
                           : mediaLibraryGranted === true
-                            ? "기기에 저장"
-                            : "권한 허용 후 저장"}
+                            ? "Save to device"
+                            : "Allow access and save"}
                   </Text>
                 </TouchableOpacity>
               ) : null}
@@ -759,24 +793,27 @@ export default function CameraScreen({
                   onPress={handleRetake}
                 >
                   <Ionicons name="refresh" size={20} color={ui.textSecondary} />
-                  <Text style={styles.retakeText}>다시 촬영</Text>
+                  <Text style={styles.retakeText}>Retake</Text>
                 </TouchableOpacity>
+                {!isPhotoCapture ? (
+                  <>
+                    <TouchableOpacity
+                      style={styles.registerButton}
+                      onPress={() => handleRegister("sha256")}
+                    >
+                      <Ionicons name="shield-checkmark" size={20} color="#FFFFFF" />
+                      <Text style={styles.registerText}>Submit SHA-256 + pHash</Text>
+                    </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={styles.registerButton}
-                  onPress={() => handleRegister("sha256")}
-                >
-                  <Ionicons name="shield-checkmark" size={20} color="#FFFFFF" />
-                  <Text style={styles.registerText}>SHA-256 + pHash 제출</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.registerButtonSecondary}
-                  onPress={() => handleRegister("phash")}
-                >
-                  <Ionicons name="images" size={20} color={ui.primary} />
-                  <Text style={styles.registerTextSecondary}>pHash 루트</Text>
-                </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.registerButtonSecondary}
+                      onPress={() => handleRegister("phash")}
+                    >
+                      <Ionicons name="images" size={20} color={ui.primary} />
+                      <Text style={styles.registerTextSecondary}>Submit pHash only</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : null}
               </>
             )}
 
@@ -792,12 +829,12 @@ export default function CameraScreen({
                     color={ui.textSecondary}
                   />
                   <Text style={styles.retakeText}>
-                    {capturedMediaType === "video" ? "새 영상 촬영" : "새 사진 촬영"}
+                    {capturedMediaType === "video" ? "Record another video" : "Take another photo"}
                   </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.doneButton} onPress={onBack}>
-                  <Text style={styles.doneText}>완료</Text>
+                  <Text style={styles.doneText}>Done</Text>
                 </TouchableOpacity>
 
                 {!!verificationUrl && (
@@ -805,8 +842,8 @@ export default function CameraScreen({
                     <Ionicons name="share-social" size={18} color={ui.primary} />
                     <Text style={styles.shareButtonText}>
                       {selectedShareVariant === "proved"
-                        ? "PROVED 버전 공유"
-                        : "표준 JPG 공유"}
+                        ? "Share proved version"
+                        : "Share standard JPG"}
                     </Text>
                   </TouchableOpacity>
                 )}
@@ -820,7 +857,7 @@ export default function CameraScreen({
                   onPress={handleRetake}
                 >
                   <Ionicons name="refresh" size={20} color={ui.textSecondary} />
-                  <Text style={styles.retakeText}>다시 시도</Text>
+                  <Text style={styles.retakeText}>Try again</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -841,7 +878,7 @@ export default function CameraScreen({
         >
           <Ionicons name="arrow-back" size={24} color={ui.text} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>촬영</Text>
+        <Text style={styles.topBarTitle}>Capture</Text>
         <TouchableOpacity
           onPress={() => setFacing((f) => (f === "back" ? "front" : "back"))}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
@@ -864,7 +901,7 @@ export default function CameraScreen({
               cameraMode === "picture" && styles.captureTypeChipTextActive,
             ]}
           >
-            사진
+            Photo
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
@@ -880,7 +917,7 @@ export default function CameraScreen({
               cameraMode === "video" && styles.captureTypeChipTextActive,
             ]}
           >
-            영상
+            Video
           </Text>
         </TouchableOpacity>
       </View>
@@ -904,25 +941,7 @@ export default function CameraScreen({
       </CameraView>
 
       <View style={styles.cameraControls}>
-        <TouchableOpacity
-          style={[
-            styles.monitorModeButton,
-            monitorCaptureMode && styles.monitorModeButtonActive,
-            cameraMode === "video" && styles.monitorModeButtonDisabled,
-          ]}
-          onPress={() => {
-            if (cameraMode === "video") return;
-            setMonitorCaptureMode((prev) => !prev);
-          }}
-        >
-          <Text style={styles.monitorModeButtonText}>
-            {cameraMode === "video"
-              ? "MONITOR N/A"
-              : monitorCaptureMode
-                ? "MONITOR ON"
-                : "MONITOR OFF"}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.captureControlSpacer} />
         <TouchableOpacity
           style={[
             styles.captureButton,
@@ -949,9 +968,9 @@ export default function CameraScreen({
           <Text style={styles.captureModeLabel}>
             {cameraMode === "video"
               ? isRecording
-                ? "녹화 중"
-                : "영상"
-              : "사진"}
+                ? "Recording"
+                : "Video"
+              : "Photo"}
           </Text>
         </View>
       </View>
@@ -1464,42 +1483,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: "#fff",
   },
-  monitorModeButton: {
-    minWidth: 98,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: ui.border,
-    backgroundColor: ui.canvas,
-    alignItems: "center",
-  },
-  monitorModeButtonActive: {
-    borderColor: ui.warning,
-    backgroundColor: ui.warningSoft,
-  },
-  monitorModeButtonDisabled: {
-    opacity: 0.55,
-  },
-  monitorModeButtonText: {
-    color: ui.text,
-    fontSize: 11,
-    fontWeight: "800",
-  },
-  monitorBadge: {
-    width: "100%",
-    marginBottom: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: ui.warning,
-    backgroundColor: ui.warningSoft,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  monitorBadgeText: {
-    color: ui.text,
-    fontSize: 13,
-    fontWeight: "700",
+  captureControlSpacer: {
+    width: 86,
   },
   videoPreviewCard: {
     width: "100%",
@@ -1557,7 +1542,7 @@ function extractGpsFromExif(exif: any): { lat: number; lng: number } | null {
 function normalizeLocalMediaUri(uri: string): string {
   const trimmed = String(uri || "").trim();
   if (!trimmed) {
-    throw new Error("저장할 미디어 경로가 없습니다.");
+    throw new Error("No media path is available to save.");
   }
   return trimmed.startsWith("file://") ? trimmed : `file://${trimmed}`;
 }
@@ -1569,7 +1554,7 @@ async function saveCapturedMediaToLibrary(
   const normalizedUri = await ensureSavableMediaUri(uri, mediaType);
   const info = await FileSystem.getInfoAsync(normalizedUri);
   if (!info.exists) {
-    throw new Error(`파일이 존재하지 않습니다: ${normalizedUri}`);
+      throw new Error(`File does not exist: ${normalizedUri}`);
   }
 
   const asset = await MediaLibrary.createAssetAsync(normalizedUri);
@@ -1589,7 +1574,7 @@ async function ensureSavableMediaUri(
   const normalizedUri = normalizeLocalMediaUri(uri);
   const sourceInfo = await FileSystem.getInfoAsync(normalizedUri);
   if (!sourceInfo.exists) {
-    throw new Error(`파일이 존재하지 않습니다: ${normalizedUri}`);
+      throw new Error(`File does not exist: ${normalizedUri}`);
   }
   const hasExtension = /\.[a-z0-9]+$/i.test(normalizedUri);
   if (hasExtension) return normalizedUri;

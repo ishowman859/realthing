@@ -37,6 +37,58 @@
       </section>
 
       <section class="card">
+        <div class="section-head">
+          <div>
+            <h3>Solana Anchor Settings</h3>
+            <p class="section-sub">
+              머클 루트 앵커링용 RPC와 전용 지갑 키를 저장합니다. 개인키는 다시 표시하지 않고 공개키와 상태만 보여줍니다.
+            </p>
+          </div>
+          <button id="saveSolanaButton" class="btn">Solana 저장</button>
+        </div>
+
+        <div class="grid two">
+          <label class="field">
+            <span>RPC URL</span>
+            <input id="solanaRpcUrl" class="input mono" placeholder="https://api.devnet.solana.com" />
+          </label>
+          <label class="field">
+            <span>Cluster</span>
+            <select id="solanaCluster" class="input mono">
+              <option value="">자동 감지</option>
+              <option value="devnet">devnet</option>
+              <option value="mainnet-beta">mainnet-beta</option>
+              <option value="testnet">testnet</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Commitment</span>
+            <select id="solanaCommitment" class="input mono">
+              <option value="confirmed">confirmed</option>
+              <option value="processed">processed</option>
+              <option value="finalized">finalized</option>
+            </select>
+          </label>
+          <label class="field check">
+            <input id="solanaAnchorDisabled" type="checkbox" />
+            <span>온체인 앵커링 일시 중지</span>
+          </label>
+        </div>
+
+        <label class="field">
+          <span>Solana Private Key</span>
+          <textarea
+            id="solanaKeypair"
+            class="input mono textarea"
+            placeholder="base58 비밀키 또는 [12,34,...] 64바이트 배열"
+          ></textarea>
+        </label>
+
+        <div id="solanaStatusText" class="status">-</div>
+        <dl id="solanaFacts" class="facts"></dl>
+      </section>
+
+      <section class="card">
         <h3>최근 자산</h3>
         <table>
           <thead>

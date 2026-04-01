@@ -1,4 +1,5 @@
 package com.verity.app
+import com.verity.app.network.VerityPinnedHttpPackage
 import com.verity.app.location.VerityRadioEnvironmentPackage
 import com.verity.app.security.VerityHardwareSignerPackage
 
@@ -27,6 +28,7 @@ class MainApplication : Application(), ReactApplication {
             val packages = PackageList(this).packages.toMutableList()
             packages.add(VerityHardwareSignerPackage())
             packages.add(VerityRadioEnvironmentPackage())
+            packages.add(VerityPinnedHttpPackage())
             // Packages that cannot be autolinked yet can be added manually here, for example:
             // packages.add(new MyReactNativePackage());
             return packages

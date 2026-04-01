@@ -39,9 +39,10 @@ export async function insertAsset(asset) {
       id, token, serial, owner, mode, media_type, sha256, phash,
       tee_key_id, tee_signature, tee_payload_json, tee_provider, tee_verified,
       captured_timestamp_ms, onchain_timestamp_ms, gps_lat, gps_lng, minute_bucket, batch_id,
+      sha256_combined_hash, phash_combined_hash,
       ai_risk_score, metadata_json, chain_tx_signature, chain_verified, duplicate_score
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26
     )
     RETURNING *;
   `;
@@ -65,6 +66,8 @@ export async function insertAsset(asset) {
     asset.gpsLng ?? null,
     asset.minuteBucket,
     asset.batchId ?? null,
+    asset.sha256CombinedHash ?? null,
+    asset.phashCombinedHash ?? null,
     asset.aiRiskScore ?? null,
     asset.metadata ?? null,
     asset.chainTxSignature ?? null,
@@ -113,28 +116,38 @@ export async function getLatestAssetBySha256(sha256Hex) {
   return rows[0] ?? null;
 }
 
-export async function getLatestAssetByPhash(phashHex) {
+export async function getLatestAssetByPhash(phashHex, mediaType = null) {
   const h = String(phashHex || "").trim().toLowerCase();
   if (!h) return null;
-  const { rows } = await pool.query(
-    `SELECT * FROM assets
-     WHERE phash IS NOT NULL AND LOWER(phash) = $1
+  const params = [h];
+  let sql = `SELECT * FROM assets
+     WHERE phash IS NOT NULL AND LOWER(phash) = $1`;
+  if (mediaType) {
+    params.push(String(mediaType).trim().toLowerCase());
+    sql += ` AND media_type = $${params.length}`;
+  }
+  sql += `
      ORDER BY created_at DESC
-     LIMIT 1`,
-    [h]
-  );
+     LIMIT 1`;
+  const { rows } = await pool.query(sql, params);
   return rows[0] ?? null;
 }
 
-export async function listAssetsWithPhash(limit = 500) {
+export async function listAssetsWithPhash(limit = 500, mediaType = null) {
   const safeLimit = Math.max(1, Math.min(5000, Number(limit) || 500));
-  const { rows } = await pool.query(
+  const params = [];
+  let sql =
     `SELECT * FROM assets
-     WHERE phash IS NOT NULL
+     WHERE phash IS NOT NULL`;
+  if (mediaType) {
+    params.push(String(mediaType).trim().toLowerCase());
+    sql += ` AND media_type = $${params.length}`;
+  }
+  params.push(safeLimit);
+  sql += `
      ORDER BY created_at DESC
-     LIMIT $1`,
-    [safeLimit]
-  );
+     LIMIT $${params.length}`;
+  const { rows } = await pool.query(sql, params);
   return rows;
 }
 

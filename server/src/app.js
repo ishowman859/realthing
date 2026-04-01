@@ -27,7 +27,11 @@ import {
   insertAsset,
   BATCH_MERKLE_IMMEDIATE_AT_COUNT,
 } from "./db.js";
-import { getBestDuplicateScore, similarityFromPhash } from "./phash.js";
+import {
+  getBestDuplicateScore,
+  hammingDistanceFromPhash,
+  similarityFromPhash,
+} from "./phash.js";
 import {
   buildMerkleTree,
   createAssetLeafHash,
@@ -44,9 +48,12 @@ import { enrichMetadataWithOpenCellid } from "./cellGpsAnalysis.js";
 import { countOpenCellidRows } from "./opencellid.js";
 import {
   getSolanaMerkleAnchorOptions,
+  getSolanaAdminStatus,
   solanaExplorerTxUrl,
+  parseSolanaKeypair,
   submitMerkleRootMemo,
 } from "./solanaMerkleAnchor.js";
+import { saveRuntimeSolanaConfig } from "./runtimeConfig.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -336,6 +343,57 @@ export function createApp() {
     res.json({ ok: true, service: "verity-server-admin" });
   });
 
+  app.get("/v1/admin/solana", (_req, res) => {
+    res.json(getSolanaAdminStatus());
+  });
+
+  app.post("/v1/admin/solana", (req, res) => {
+    try {
+      const rpcUrl = asString(req.body?.rpcUrl);
+      const cluster = asString(req.body?.cluster);
+      const commitment = asString(req.body?.commitment);
+      const keypair = asString(req.body?.keypair);
+      const anchorDisabled = req.body?.anchorDisabled === true;
+
+      if (!rpcUrl) {
+        return res.status(400).json({ message: "rpcUrl이 필요합니다." });
+      }
+      if (!keypair) {
+        return res.status(400).json({ message: "keypair가 필요합니다." });
+      }
+      const parsed = parseSolanaKeypair(keypair);
+      if (!parsed) {
+        return res.status(400).json({
+          message: "Solana 개인키 형식이 올바르지 않습니다. base58 또는 [1,2,3] 배열을 사용하세요.",
+        });
+      }
+
+      const saved = saveRuntimeSolanaConfig({
+        rpcUrl,
+        cluster,
+        commitment,
+        keypair,
+        anchorDisabled,
+        updatedAt: new Date().toISOString(),
+      });
+      res.json({
+        ok: true,
+        saved: {
+          rpcUrl: saved.rpcUrl,
+          cluster: saved.cluster,
+          commitment: saved.commitment || "confirmed",
+          anchorDisabled: saved.anchorDisabled,
+          publicKey: parsed.publicKey.toBase58(),
+          updatedAt: saved.updatedAt,
+        },
+        status: getSolanaAdminStatus(),
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: "Solana 관리자 설정 저장 실패" });
+    }
+  });
+
   // [각주2] Silent-Face-Anti-Spoofing 추론 서버를 호출해 스푸핑 점수를 반환합니다.
   app.post("/v1/anti-spoof/check", onePerSecondAntiSpoofGuard, async (req, res) => {
     try {
@@ -426,6 +484,12 @@ export function createApp() {
         const candidates = await listPhashCandidates(phash);
         duplicateScore = getBestDuplicateScore(phash, candidates);
       }
+      const combinedHashes = buildCombinedHashesForInsert({
+        id,
+        serial,
+        sha256,
+        phash,
+      });
 
       const row = await insertAsset({
         id,
@@ -447,6 +511,7 @@ export function createApp() {
         teeProof,
         chainVerified: mode === "sha256" ? !!chainTxSignature : false,
         duplicateScore,
+        ...combinedHashes,
       });
       const attached = await attachAssetToBatch(row.id, batch.id);
       await ensureFollowingBatchPrepared(attached);
@@ -459,7 +524,7 @@ export function createApp() {
         );
       }
 
-      res.status(201).json(toClientRecord(row, verifyBaseUrl));
+      res.status(201).json(await toClientRecord(row, verifyBaseUrl));
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: "자산 등록 실패" });
@@ -498,9 +563,12 @@ export function createApp() {
 
       const receivedMs = Date.now();
       const minuteBucket = batchWindowBucketIso(receivedMs);
-      const capturedTimestampMs =
-        toIntOrNull(body.capturedTimestampMs) ?? receivedMs;
       const metadata = parseMaybeJson(body.metadata);
+      const teeProof = parseMaybeJson(body.teeProof);
+      const capturedTimestampMs =
+        toIntOrNull(body.capturedTimestampMs) ??
+        extractCapturedTimestamp(metadata, teeProof) ??
+        receivedMs;
       const aiRiskScore = toIntOrNull(body.aiRiskScore);
       const ingestChannel =
         mediaType === "video"
@@ -536,6 +604,12 @@ export function createApp() {
         const candidates = await listPhashCandidates(phash);
         duplicateScore = getBestDuplicateScore(phash, candidates);
       }
+      const combinedHashes = buildCombinedHashesForInsert({
+        id,
+        serial,
+        sha256,
+        phash,
+      });
 
       const row = await insertAsset({
         id,
@@ -554,9 +628,10 @@ export function createApp() {
         aiRiskScore,
         metadata: mergedMetadata,
         chainTxSignature: null,
-        teeProof: null,
+        teeProof,
         chainVerified: false,
         duplicateScore,
+        ...combinedHashes,
       });
       const attached = await attachAssetToBatch(row.id, batch.id);
       await ensureFollowingBatchPrepared(attached);
@@ -569,7 +644,7 @@ export function createApp() {
         );
       }
 
-      res.status(201).json(toClientRecord(row, verifyBaseUrl));
+      res.status(201).json(await toClientRecord(row, verifyBaseUrl));
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: "SHA-256 수집 실패" });
@@ -581,7 +656,7 @@ export function createApp() {
       const owner = asString(req.query.owner);
       if (!owner) return res.status(400).json({ message: "owner query가 필요합니다." });
       const rows = await listAssetsByOwner(owner);
-      res.json(rows.map((r) => toClientRecord(r, verifyBaseUrl)));
+      res.json(await Promise.all(rows.map((r) => toClientRecord(r, verifyBaseUrl))));
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: "자산 목록 조회 실패" });
@@ -592,7 +667,7 @@ export function createApp() {
     try {
       const limit = Math.max(1, Math.min(200, Number(req.query.limit) || 50));
       const rows = await listRecentAssets(limit);
-      res.json(rows.map((r) => toClientRecord(r, verifyBaseUrl)));
+      res.json(await Promise.all(rows.map((r) => toClientRecord(r, verifyBaseUrl))));
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: "관리자 자산 목록 조회 실패" });
@@ -694,6 +769,12 @@ export function createApp() {
           mimeType: mime,
           size: file.size,
         };
+        const combinedHashes = buildCombinedHashesForInsert({
+          id,
+          serial,
+          sha256,
+          phash,
+        });
 
         const row = await insertAsset({
           id,
@@ -715,6 +796,7 @@ export function createApp() {
           teeProof: null,
           chainVerified: false,
           duplicateScore,
+          ...combinedHashes,
         });
         const attached = await attachAssetToBatch(row.id, batch.id);
         await ensureFollowingBatchPrepared(attached);
@@ -729,8 +811,8 @@ export function createApp() {
 
         const merkleCheck = await verifyAssetAgainstIndexedBlock(row);
         res.status(201).json({
-          asset: { ...toClientRecord(row, verifyBaseUrl), token: row.token },
-          verification: toVerificationView(row, merkleCheck),
+          asset: { ...(await toClientRecord(row, verifyBaseUrl)), token: row.token },
+          verification: await toVerificationView(row, merkleCheck),
         });
       } catch (error) {
         console.error(error);
@@ -756,12 +838,58 @@ export function createApp() {
           .json({ message: "동일한 SHA-256으로 등록된 기록이 없습니다." });
       }
       const merkleCheck = await verifyAssetAgainstIndexedBlock(row);
-      res.json(toVerificationView(row, merkleCheck));
+      res.json(await toVerificationView(row, merkleCheck));
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: "검증 정보 조회 실패" });
     }
   });
+
+  app.post(
+    "/v1/verify/search-hashes",
+    uploadPerMinuteByIp,
+    onePerSecondVerifyUploadGuard,
+    async (req, res) => {
+      try {
+        const sha256 = asString(req.body?.sha256).toLowerCase();
+        const phash = asString(req.body?.phash).toLowerCase();
+        const mediaType = asString(req.body?.mediaType || "photo");
+        const fileName = asString(req.body?.fileName);
+        const mimeType = asString(req.body?.mimeType);
+
+        if (!sha256 && !phash) {
+          return res.status(400).json({ message: "sha256 또는 phash가 필요합니다." });
+        }
+        if (sha256 && !/^[0-9a-f]{64}$/i.test(sha256)) {
+          return res.status(400).json({ message: "sha256 형식이 올바르지 않습니다." });
+        }
+        if (phash && !/^[0-9a-f]{16}$/i.test(phash)) {
+          return res.status(400).json({ message: "phash 형식이 올바르지 않습니다." });
+        }
+
+        const match = await searchVerificationCandidates({
+          sha256,
+          phash,
+          mediaType,
+        });
+
+        res.json({
+          query: {
+            sha256: sha256 || null,
+            phash: phash || null,
+            mediaType: mediaType || null,
+            originalName: fileName || null,
+            mimeType: mimeType || null,
+            source: "client-hash",
+          },
+          ...match,
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "해시 기반 검증 조회 실패" });
+      }
+    }
+  );
 
   app.post(
     "/v1/verify/search-upload",
@@ -791,7 +919,11 @@ export function createApp() {
 
         const sha256 = sha256Buffer(file.buffer);
         const phash = await averageHash16FromImageBuffer(file.buffer);
-        const match = await findBestVerificationMatch({ sha256, phash });
+        const match = await searchVerificationCandidates({
+          sha256,
+          phash,
+          mediaType: "photo",
+        });
 
         res.json({
           query: {
@@ -801,10 +933,7 @@ export function createApp() {
             originalName: asString(file.originalname) || null,
             size: file.size,
           },
-          exactMatchType: match.exactMatchType,
-          bestPhashScore: match.bestPhashScore,
-          verification: match.verification,
-          similarMatches: match.similarMatches,
+          ...match,
         });
       } catch (error) {
         console.error(error);
@@ -819,7 +948,7 @@ export function createApp() {
       const row = await getAssetByToken(token);
       if (!row) return res.status(404).json({ message: "검증 토큰을 찾을 수 없습니다." });
       const merkleCheck = await verifyAssetAgainstIndexedBlock(row);
-      res.json(toVerificationView(row, merkleCheck));
+      res.json(await toVerificationView(row, merkleCheck));
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: "검증 정보 조회 실패" });
@@ -848,7 +977,7 @@ export function createApp() {
         chainVerified,
       });
       if (!updated) return res.status(404).json({ message: "검증 토큰을 찾을 수 없습니다." });
-      res.json(toVerificationView(updated, merkleCheck));
+      res.json(await toVerificationView(updated, merkleCheck));
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: "재검증 실패" });
@@ -889,7 +1018,7 @@ function mountVerifyWebUi(app) {
     });
   });
 
-  app.get("/v/:token", (_req, res, next) => {
+  const sendVerifyIndex = (_req, res, next) => {
     try {
       let html = fs.readFileSync(indexPath, "utf8");
       if (!html.includes('name="verity-verify-base"')) {
@@ -902,7 +1031,11 @@ function mountVerifyWebUi(app) {
     } catch (err) {
       next(err);
     }
-  });
+  };
+
+  app.get("/v", sendVerifyIndex);
+  app.get("/verify", sendVerifyIndex);
+  app.get("/v/:token", sendVerifyIndex);
 }
 
 export async function processMinuteBatches() {
@@ -936,11 +1069,64 @@ function pickPreferredTreeType(row) {
   return "sha256";
 }
 
-function toClientRecord(row, verifyBase) {
+const reverseGeocodeCache = new Map();
+
+async function resolveLocationSummary(gps) {
+  const lat = Number(gps?.lat);
+  const lng = Number(gps?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const key = `${lat.toFixed(3)},${lng.toFixed(3)}`;
+  if (reverseGeocodeCache.has(key)) return reverseGeocodeCache.get(key);
+
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=3&lat=${encodeURIComponent(
+        lat
+      )}&lon=${encodeURIComponent(lng)}&accept-language=ko,en`,
+      {
+        signal:
+          typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+            ? AbortSignal.timeout(2500)
+            : undefined,
+        headers: {
+          "User-Agent": "verity-server/1.0 (reverse-location-summary)",
+        },
+      }
+    );
+    if (!response.ok) {
+      reverseGeocodeCache.set(key, null);
+      return null;
+    }
+    const data = await response.json();
+    const address = data?.address && typeof data.address === "object" ? data.address : {};
+    const country = asString(address.country);
+    const region =
+      asString(address.state) ||
+      asString(address.region) ||
+      asString(address.province) ||
+      asString(address.state_district);
+    const summary = [country, region].filter(Boolean).join(" · ") || asString(data?.display_name);
+    reverseGeocodeCache.set(key, summary || null);
+    return summary || null;
+  } catch {
+    reverseGeocodeCache.set(key, null);
+    return null;
+  }
+}
+
+async function toClientRecord(row, verifyBase, options = {}) {
   const verificationUrl = `${verifyBase.replace(/\/$/, "")}/${row.token}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(
     verificationUrl
   )}`;
+  const gps = {
+    lat: row.gps_lat,
+    lng: row.gps_lng,
+  };
+  const locationSummary = options.includeLocationSummary
+    ? await resolveLocationSummary(gps)
+    : null;
   return {
     id: row.id,
     serial: row.serial,
@@ -954,10 +1140,8 @@ function toClientRecord(row, verifyBase) {
     onchainTimestampMs: row.onchain_timestamp_ms,
     indexedBlockNumber: row.indexed_block_number,
     merkleLeafHash: row.merkle_leaf_hash,
-    gps: {
-      lat: row.gps_lat,
-      lng: row.gps_lng,
-    },
+    gps,
+    locationSummary,
     aiRiskScore: row.ai_risk_score,
     metadata: row.metadata_json,
     chainTxSignature: row.chain_tx_signature,
@@ -972,10 +1156,11 @@ function toClientRecord(row, verifyBase) {
     qrCodeUrl,
     createdAt: new Date(row.created_at).getTime(),
     duplicateScore: row.duplicate_score,
+    combinedHashes: getCombinedHashesForRow(row),
   };
 }
 
-function toVerificationView(row, merkleCheck = null) {
+async function toVerificationView(row, merkleCheck = null) {
   const merkleTrees = merkleCheck?.trees || buildEmptyMerkleTrees();
   const preferredTreeType = merkleCheck?.preferredTreeType || pickPreferredTreeType(row);
   const preferredTree = merkleTrees[preferredTreeType] || merkleTrees.sha256;
@@ -986,6 +1171,11 @@ function toVerificationView(row, merkleCheck = null) {
     batch?.tx_hash && solanaOptions
       ? solanaExplorerTxUrl(solanaOptions.cluster, batch.tx_hash)
       : null;
+  const gps = {
+    lat: row.gps_lat,
+    lng: row.gps_lng,
+  };
+  const locationSummary = await resolveLocationSummary(gps);
   return {
     token: row.token,
     /** 머클 리프 직렬화(createAssetLeafHash)에 필요 — 브라우저가 서버 없이 리프 재계산 시 사용 */
@@ -1027,10 +1217,8 @@ function toVerificationView(row, merkleCheck = null) {
               : "solana",
         }
       : null,
-    gps: {
-      lat: row.gps_lat,
-      lng: row.gps_lng,
-    },
+    gps,
+    locationSummary,
     aiRiskScore: row.ai_risk_score,
     metadata: row.metadata_json,
     chainTxSignature: row.chain_tx_signature,
@@ -1043,8 +1231,65 @@ function toVerificationView(row, merkleCheck = null) {
     },
     chainVerified: merkleCheck?.verified ?? row.chain_verified,
     duplicateScore: row.duplicate_score,
+    combinedHashes: getCombinedHashesForRow(row),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function getStoredCombinedHash(row, type) {
+  if (String(type || "") === "phash") {
+    return asString(row?.phash_combined_hash) || null;
+  }
+  return asString(row?.sha256_combined_hash) || null;
+}
+
+function getCombinedHashForRow(row, type) {
+  const normalizedType = String(type || "").toLowerCase() === "phash" ? "phash" : "sha256";
+  const stored = getStoredCombinedHash(row, normalizedType);
+  if (stored) return stored;
+  const hashValue =
+    normalizedType === "phash" ? asString(row?.phash) : asString(row?.sha256);
+  if (!hashValue) return null;
+  return createAssetLeafHash(row, normalizedType);
+}
+
+function getCombinedHashesForRow(row) {
+  const sha256 = getCombinedHashForRow(row, "sha256");
+  const phash = getCombinedHashForRow(row, "phash");
+  const preferredType = pickPreferredTreeType(row);
+  return {
+    sha256,
+    phash,
+    preferredType,
+    preferred: preferredType === "phash" ? phash : sha256,
+  };
+}
+
+function buildSearchCandidate(row, options = {}) {
+  const matchType = options.matchType || "similar_phash";
+  const combinedHashType =
+    matchType === "exact_sha256" && asString(row?.sha256) ? "sha256" : "phash";
+  const combinedHash = getCombinedHashForRow(row, combinedHashType);
+  const batchStatus = asString(options.batchStatus || row?.batch_status) || null;
+  return {
+    token: row.token,
+    assetId: row.id,
+    serial: row.serial,
+    owner: row.owner,
+    mode: row.mode,
+    mediaType: row.media_type,
+    createdAt: row.created_at,
+    score:
+      typeof options.score === "number" ? Number(options.score.toFixed(2)) : null,
+    hammingDistance:
+      typeof options.hammingDistance === "number" ? options.hammingDistance : null,
+    matchType,
+    combinedHashType,
+    combinedHash,
+    batchId: row.batch_id ?? null,
+    indexedBlockNumber: row.indexed_block_number ?? null,
+    proofReady: !!(row.batch_id && (row.indexed_block_number != null || batchStatus === "sent")),
   };
 }
 
@@ -1103,6 +1348,17 @@ function createSerial(mode) {
     .toString()
     .padStart(6, "0");
   return `VRT-${mode.toUpperCase()}-${yyyy}${mm}${dd}-${suffix}`;
+}
+
+function buildCombinedHashesForInsert(asset) {
+  return {
+    sha256CombinedHash: asString(asset?.sha256)
+      ? createAssetLeafHash(asset, "sha256")
+      : null,
+    phashCombinedHash: asString(asset?.phash)
+      ? createAssetLeafHash(asset, "phash")
+      : null,
+  };
 }
 
 function extractCapturedTimestamp(metadata, teeProof) {
@@ -1406,59 +1662,80 @@ function verifyMerkleTreeForAsset({
   };
 }
 
-async function findBestVerificationMatch({ sha256, phash }) {
+async function searchVerificationCandidates({ sha256, phash, mediaType }) {
   const exactSha256Row = sha256 ? await getLatestAssetBySha256(sha256) : null;
   const exactPhashRow =
-    !exactSha256Row && phash ? await getLatestAssetByPhash(phash) : null;
-  const exactRow = exactSha256Row || exactPhashRow;
+    !exactSha256Row && phash ? await getLatestAssetByPhash(phash, mediaType || null) : null;
 
-  let verification = null;
-  if (exactRow) {
-    verification = toVerificationView(
-      exactRow,
-      await verifyAssetAgainstIndexedBlock(exactRow)
+  const candidates = [];
+  const seen = new Set();
+  let bestPhashScore = null;
+
+  if (exactSha256Row) {
+    candidates.push(
+      buildSearchCandidate(exactSha256Row, {
+        matchType: "exact_sha256",
+        score: 100,
+        hammingDistance: phash && exactSha256Row.phash
+          ? hammingDistanceFromPhash(phash, exactSha256Row.phash)
+          : 0,
+      })
     );
+    seen.add(exactSha256Row.token);
   }
 
-  const similarMatches = [];
-  let bestPhashScore = null;
+  if (exactPhashRow && !seen.has(exactPhashRow.token)) {
+    candidates.push(
+      buildSearchCandidate(exactPhashRow, {
+        matchType: "exact_phash",
+        score: 100,
+        hammingDistance: 0,
+      })
+    );
+    seen.add(exactPhashRow.token);
+  }
+
   if (phash) {
-    const candidates = await listAssetsWithPhash(2000);
-    const scored = candidates
+    const rows = await listAssetsWithPhash(2000, mediaType || null);
+    const scored = rows
       .map((candidate) => ({
         row: candidate,
         score: similarityFromPhash(phash, candidate.phash),
+        hammingDistance: hammingDistanceFromPhash(phash, candidate.phash),
       }))
       .filter((entry) => entry.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 5);
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.hammingDistance - b.hammingDistance;
+      })
+      .slice(0, 8);
 
     bestPhashScore = scored.length > 0 ? scored[0].score : null;
     for (const entry of scored) {
-      similarMatches.push({
-        token: entry.row.token,
-        score: entry.score,
-        serial: entry.row.serial,
-        owner: entry.row.owner,
-        mode: entry.row.mode,
-        mediaType: entry.row.media_type,
-        createdAt: entry.row.created_at,
-      });
-    }
-
-    if (!verification && scored.length > 0) {
-      verification = toVerificationView(
-        scored[0].row,
-        await verifyAssetAgainstIndexedBlock(scored[0].row)
+      if (seen.has(entry.row.token)) continue;
+      candidates.push(
+        buildSearchCandidate(entry.row, {
+          matchType: entry.score === 100 ? "exact_phash" : "similar_phash",
+          score: entry.score,
+          hammingDistance: entry.hammingDistance,
+        })
       );
+      seen.add(entry.row.token);
     }
   }
 
   return {
-    exactMatchType: exactSha256Row ? "sha256" : exactPhashRow ? "phash" : null,
+    exactMatchType: exactSha256Row ? "sha256" : null,
     bestPhashScore,
-    verification,
-    similarMatches,
+    exactPhashMatch: exactPhashRow
+      ? buildSearchCandidate(exactPhashRow, {
+          matchType: "exact_phash",
+          score: 100,
+          hammingDistance: 0,
+        })
+      : null,
+    candidates,
+    similarMatches: candidates.filter((item) => item.matchType !== "exact_sha256"),
   };
 }
 

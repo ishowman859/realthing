@@ -22,7 +22,7 @@ export async function stampMonitorWatermark(imageUri: string): Promise<string> {
     formatAsRGBA: true,
   });
   if (!decoded?.data || !decoded.width || !decoded.height) {
-    throw new Error("이미지 디코딩 실패");
+    throw new Error("Image decoding failed.");
   }
 
   const width = decoded.width;

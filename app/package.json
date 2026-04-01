@@ -26,6 +26,7 @@
     "expo-image-manipulator": "~13.0.0",
     "expo-image-picker": "~16.0.6",
     "expo-media-library": "~17.0.0",
+    "expo-notifications": "~0.29.14",
     "expo-status-bar": "~2.0.0",
     "expo-video-thumbnails": "~9.0.3",
     "jpeg-js": "^0.4.4",

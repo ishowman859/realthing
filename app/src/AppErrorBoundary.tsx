@@ -30,9 +30,9 @@ export class AppErrorBoundary extends Component<Props, State> {
       const e = this.state.err;
       return (
         <SafeAreaView style={styles.wrap}>
-          <Text style={styles.title}>앱 실행 중 오류</Text>
+          <Text style={styles.title}>App error</Text>
           <Text style={styles.hint}>
-            아래 내용을 캡처해 주시면 원인 파악에 도움이 됩니다.
+            Capture the details below if you need to report the issue.
           </Text>
           <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollInner}>
             <Text selectable style={styles.mono}>
@@ -48,7 +48,7 @@ export class AppErrorBoundary extends Component<Props, State> {
             style={styles.btn}
             onPress={() => this.setState({ err: null })}
           >
-            <Text style={styles.btnText}>다시 시도</Text>
+            <Text style={styles.btnText}>Try again</Text>
           </Pressable>
         </SafeAreaView>
       );

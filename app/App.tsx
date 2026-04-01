@@ -28,7 +28,6 @@ function AppInner() {
   const photoHash = useVerityHash(ownerAddress);
 
   const handleNavigateCamera = () => {
-    photoHash.reset();
     setCurrentScreen("camera");
   };
 
@@ -37,6 +36,7 @@ function AppInner() {
       return (
         <CameraScreen
           status={photoHash.status}
+          statusMessageOverride={photoHash.anchorMonitor.message}
           currentPhash={photoHash.currentPhash}
           currentSha256={photoHash.currentSha256}
           txSignature={photoHash.txSignature}
@@ -46,10 +46,7 @@ function AppInner() {
           error={photoHash.error}
           onRegisterPhoto={photoHash.registerPhoto}
           onReset={photoHash.reset}
-          onBack={() => {
-            photoHash.reset();
-            setCurrentScreen("home");
-          }}
+          onBack={() => setCurrentScreen("home")}
         />
       );
 
@@ -75,6 +72,7 @@ function AppInner() {
       return (
         <HomeScreen
           ownerAddress={ownerAddress}
+          anchorStatus={photoHash.anchorMonitor}
           onNavigateCamera={handleNavigateCamera}
           onNavigateHistory={() => setCurrentScreen("history")}
           onNavigateVerify={() => setCurrentScreen("verify")}

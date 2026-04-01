@@ -1,6 +1,7 @@
 import * as FileSystem from "expo-file-system";
 import Constants from "expo-constants";
 import { Platform } from "react-native";
+import { requestJson } from "../native/VerityPinnedHttp";
 import { computePhash, computeSha256 } from "./phash";
 import { standardizePhotoForHashing } from "./standardizePhoto";
 import { extractVideoPhashKeyframes } from "./videoPhash";
@@ -14,6 +15,7 @@ export interface TeeProofPayload {
   sha256: string;
   nonce: string;
   timestamp: number;
+  publicKey?: string | null;
 }
 
 export interface TeeProof {
@@ -61,20 +63,13 @@ export interface VerificationAssetRecord {
   createdAt: number;
 }
 
-export interface AntiSpoofResult {
-  // [각주1] 0~1 범위에서 스푸핑(재촬영) 가능성 확률입니다.
-  spoofProbability: number;
-  // [각주2] 서버에서 사용한 모델 식별값입니다.
-  model: string;
-}
-
 const STORAGE_FILE = `${FileSystem.documentDirectory}verity-assets.json`;
 
 /**
  * 릴리스 빌드에서 `Constants.expoConfig`가 비는 경우가 있어, extra가 없어도 항상 쓸 기본 API.
  * 운영 기본값은 HTTPS 엔드포인트를 사용하고, 로컬 개발은 app.json extra / EXPO_PUBLIC_VERITY_API_URL 로 덮어씁니다.
  */
-const DEFAULT_VERITY_API_BASE = "https://verify.verity.app";
+const DEFAULT_VERITY_API_BASE = "https://api.veritychains.com";
 
 const API_BASE_URL = resolveApiBaseUrl();
 
@@ -125,6 +120,7 @@ export interface Sha256IngestInput {
   capturedTimestampMs?: number;
   aiRiskScore?: number;
   metadata?: Record<string, unknown>;
+  teeProof?: TeeProof;
 }
 
 /** 기기에서 계산한 SHA-256(+선택 pHash)을 서버로 보냅니다. 서버가 수신 시각 기준 10초 버킷으로 배치합니다. */
@@ -146,6 +142,7 @@ export async function registerSha256Ingest(
         aiRiskScore: input.aiRiskScore,
         metadata: input.metadata,
         chainTxSignature: null,
+        teeProof: input.teeProof,
       });
     }
   }
@@ -160,13 +157,14 @@ export async function registerSha256Ingest(
     aiRiskScore: input.aiRiskScore,
     metadata: input.metadata,
     chainTxSignature: null,
+    teeProof: input.teeProof,
   });
 }
 
 async function registerSha256IngestRemote(
   input: Sha256IngestInput
 ): Promise<VerificationAssetRecord> {
-  const response = await fetch(`${API_BASE_URL}/v1/ingest/sha256`, {
+  const response = await requestJson(`${API_BASE_URL}/v1/ingest/sha256`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -178,13 +176,14 @@ async function registerSha256IngestRemote(
       capturedTimestampMs: input.capturedTimestampMs,
       aiRiskScore: input.aiRiskScore,
       metadata: input.metadata,
+      teeProof: input.teeProof,
     }),
   });
   if (!response.ok) {
     const errText = await response.text().catch(() => "");
-    throw new Error(errText || "SHA-256 수집 요청 실패");
+    throw new Error(errText || "SHA-256 ingest request failed.");
   }
-  return (await response.json()) as VerificationAssetRecord;
+  return await response.json<VerificationAssetRecord>();
 }
 
 export async function registerAsset(
@@ -219,53 +218,28 @@ export async function getSha256UsageCount(owner: string): Promise<number> {
   return items.filter((item) => item.mode === "sha256").length;
 }
 
-export async function checkAntiSpoof(
-  imageUri: string
-): Promise<AntiSpoofResult | null> {
-  if (!API_BASE_URL) return null;
-  try {
-    const imageBase64 = await FileSystem.readAsStringAsync(imageUri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    const response = await fetch(`${API_BASE_URL}/v1/anti-spoof/check`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ imageBase64 }),
-    });
-    if (!response.ok) return null;
-    const data = (await response.json()) as Partial<AntiSpoofResult>;
-    if (typeof data.spoofProbability !== "number") return null;
-    return {
-      spoofProbability: Math.max(0, Math.min(1, data.spoofProbability)),
-      model: data.model || "Silent-Face-Anti-Spoofing",
-    };
-  } catch {
-    return null;
-  }
-}
-
 async function registerAssetRemote(
   input: RegisterAssetInput
 ): Promise<VerificationAssetRecord> {
-  const response = await fetch(`${API_BASE_URL}/v1/assets`, {
+  const response = await requestJson(`${API_BASE_URL}/v1/assets`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
   if (!response.ok) {
-    throw new Error("서버에 자산 등록을 실패했습니다.");
+    throw new Error("Failed to register the asset on the server.");
   }
-  return (await response.json()) as VerificationAssetRecord;
+  return await response.json<VerificationAssetRecord>();
 }
 
 async function listAssetsRemote(owner: string): Promise<VerificationAssetRecord[]> {
-  const response = await fetch(
+  const response = await requestJson(
     `${API_BASE_URL}/v1/assets?owner=${encodeURIComponent(owner)}`
   );
   if (!response.ok) {
-    throw new Error("서버에서 히스토리를 조회하지 못했습니다.");
+    throw new Error("Failed to load history from the server.");
   }
-  return (await response.json()) as VerificationAssetRecord[];
+  return await response.json<VerificationAssetRecord[]>();
 }
 
 async function registerAssetLocal(
@@ -370,6 +344,12 @@ export interface VerificationLookupPayload {
     explorerUrl?: string | null;
     source?: string | null;
   } | null;
+  combinedHashes?: {
+    sha256?: string | null;
+    phash?: string | null;
+    preferredType?: "sha256" | "phash";
+    preferred?: string | null;
+  } | null;
   chainTxSignature?: string | null;
   chainVerified?: boolean;
   duplicateScore?: number | null;
@@ -390,11 +370,12 @@ export interface VerificationMerkleTree {
 }
 
 export interface UploadVerificationResult {
-  verification: VerificationLookupPayload;
+  verification?: VerificationLookupPayload | null;
   exactMatchType?: "sha256" | null;
   bestPhashScore?: number | null;
-  exactPhashMatch?: Omit<SimilarVerificationMatch, "score" | "mode"> | null;
+  exactPhashMatch?: VerificationSearchCandidate | null;
   similarMatches?: SimilarVerificationMatch[];
+  candidates?: VerificationSearchCandidate[];
 }
 
 export interface SimilarVerificationMatch {
@@ -407,21 +388,35 @@ export interface SimilarVerificationMatch {
   createdAt?: string;
 }
 
+export interface VerificationSearchCandidate extends SimilarVerificationMatch {
+  assetId?: string;
+  hammingDistance?: number | null;
+  matchType?: "exact_sha256" | "exact_phash" | "similar_phash";
+  combinedHash?: string | null;
+  combinedHashType?: "sha256" | "phash";
+  batchId?: string | null;
+  indexedBlockNumber?: number | null;
+  proofReady?: boolean;
+}
+
 export class VerificationLookupError extends Error {
   similarMatches: SimilarVerificationMatch[];
   bestPhashScore: number | null;
-  exactPhashMatch: Omit<SimilarVerificationMatch, "score" | "mode"> | null;
+  exactPhashMatch: VerificationSearchCandidate | null;
+  candidates: VerificationSearchCandidate[];
 
   constructor(message: string, opts?: {
     similarMatches?: SimilarVerificationMatch[];
     bestPhashScore?: number | null;
-    exactPhashMatch?: Omit<SimilarVerificationMatch, "score" | "mode"> | null;
+    exactPhashMatch?: VerificationSearchCandidate | null;
+    candidates?: VerificationSearchCandidate[];
   }) {
     super(message);
     this.name = "VerificationLookupError";
     this.similarMatches = opts?.similarMatches || [];
     this.bestPhashScore = opts?.bestPhashScore ?? null;
     this.exactPhashMatch = opts?.exactPhashMatch ?? null;
+    this.candidates = opts?.candidates || [];
   }
 }
 
@@ -429,36 +424,35 @@ export async function fetchVerificationByToken(
   token: string
 ): Promise<VerificationLookupPayload> {
   const t = token.trim();
-  if (!t) throw new Error("토큰이 필요합니다.");
-  if (!API_BASE_URL) throw new Error("API URL이 설정되지 않았습니다.");
-  const res = await fetch(`${API_BASE_URL}/v1/verify/${encodeURIComponent(t)}`);
+  if (!t) throw new Error("A token is required.");
+  if (!API_BASE_URL) throw new Error("API URL is not configured.");
+  const res = await requestJson(`${API_BASE_URL}/v1/verify/${encodeURIComponent(t)}`);
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const msg =
-      (body as { message?: string }).message || `조회 실패 (${res.status})`;
-    throw new Error(msg);
+    const body = (await res.json<{ message?: string }>().catch(
+      () => ({ message: undefined })
+    )) as { message?: string };
+    throw new Error(body.message || `Lookup failed (${res.status})`);
   }
-  return res.json();
+  return await res.json<VerificationLookupPayload>();
 }
 
 export async function recheckVerificationByToken(
   token: string
 ): Promise<VerificationLookupPayload> {
   const t = token.trim();
-  if (!t) throw new Error("토큰이 필요합니다.");
-  if (!API_BASE_URL) throw new Error("API URL이 설정되지 않았습니다.");
-  const res = await fetch(
+  if (!t) throw new Error("A token is required.");
+  if (!API_BASE_URL) throw new Error("API URL is not configured.");
+  const res = await requestJson(
     `${API_BASE_URL}/v1/verify/${encodeURIComponent(t)}/recheck`,
     { method: "POST" }
   );
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const msg =
-      (body as { message?: string }).message ||
-      `재검증 요청 실패 (${res.status})`;
-    throw new Error(msg);
+    const body = (await res.json<{ message?: string }>().catch(
+      () => ({ message: undefined })
+    )) as { message?: string };
+    throw new Error(body.message || `Recheck request failed (${res.status})`);
   }
-  return res.json();
+  return await res.json<VerificationLookupPayload>();
 }
 
 export async function uploadVerificationMedia(input: {
@@ -468,14 +462,18 @@ export async function uploadVerificationMedia(input: {
   mimeType?: string | null;
   owner?: string | null;
 }): Promise<UploadVerificationResult> {
-  if (!API_BASE_URL) throw new Error("API URL이 설정되지 않았습니다.");
+  if (!API_BASE_URL) throw new Error("API URL is not configured.");
 
+  const originalSha256 = await computeSha256(input.uri);
   const standardizedPhoto =
     input.mediaType === "photo"
       ? await standardizePhotoForHashing({ uri: input.uri })
       : null;
+  const standardizedSha256 =
+    input.mediaType === "photo" && standardizedPhoto
+      ? await computeSha256(standardizedPhoto.uri)
+      : originalSha256;
   const hashUri = standardizedPhoto?.uri ?? input.uri;
-  const sha256 = await computeSha256(hashUri);
   let phash: string | null = null;
   if (input.mediaType === "video") {
     const keyframes = await extractVideoPhashKeyframes(input.uri);
@@ -484,56 +482,113 @@ export async function uploadVerificationMedia(input: {
     phash = await computePhash(hashUri);
   }
 
-  const res = await fetch(`${API_BASE_URL}/v1/verify/search-hashes`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sha256,
-      phash,
-      mediaType: input.mediaType,
-      fileName:
-        input.fileName ||
-        `${input.mediaType === "video" ? "verify-video" : "verify-image"}-${
-          Date.now()
-        }${input.mediaType === "video" ? ".mp4" : ".jpg"}`,
-      mimeType:
-        (input.mediaType === "photo" ? standardizedPhoto?.mimeType : input.mimeType) ||
-        (input.mediaType === "video" ? "video/mp4" : "image/jpeg"),
-      owner: input.owner?.trim() || null,
-    }),
+  const payload = await searchHashesRemote({
+    sha256: originalSha256,
+    phash,
+    mediaType: input.mediaType,
+    fileName:
+      input.fileName ||
+      `${input.mediaType === "video" ? "verify-video" : "verify-image"}-${
+        Date.now()
+      }${input.mediaType === "video" ? ".mp4" : ".jpg"}`,
+    mimeType:
+      (input.mediaType === "photo" ? standardizedPhoto?.mimeType : input.mimeType) ||
+      (input.mediaType === "video" ? "video/mp4" : "image/jpeg"),
+    owner: input.owner?.trim() || null,
   });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const msg =
-      (body as { message?: string }).message || `해시 검증 실패 (${res.status})`;
-    throw new Error(msg);
-  }
-  const payload = (await res.json()) as {
-    verification?: VerificationLookupPayload | null;
-    similarMatches?: SimilarVerificationMatch[];
-    bestPhashScore?: number | null;
-    exactPhashMatch?: Omit<SimilarVerificationMatch, "score" | "mode"> | null;
-  };
-  if (!payload.verification) {
+
+  const standardizedRetryNeeded =
+    input.mediaType === "photo" &&
+    payload.exactMatchType !== "sha256" &&
+    standardizedSha256 !== originalSha256;
+
+  const finalPayload = standardizedRetryNeeded
+    ? await searchHashesRemote({
+        sha256: standardizedSha256,
+        phash,
+        mediaType: input.mediaType,
+        fileName:
+          input.fileName ||
+          `${input.mediaType === "video" ? "verify-video" : "verify-image"}-${
+            Date.now()
+          }${input.mediaType === "video" ? ".mp4" : ".jpg"}`,
+        mimeType:
+          standardizedPhoto?.mimeType ||
+          (input.mediaType === "video" ? "video/mp4" : "image/jpeg"),
+        owner: input.owner?.trim() || null,
+      })
+    : payload;
+
+  const candidates = Array.isArray(finalPayload.candidates)
+    ? finalPayload.candidates
+    : [];
+
+  if (candidates.length === 0) {
     const hasPhashClue =
-      !!payload.exactPhashMatch ||
-      (typeof payload.bestPhashScore === "number" && payload.bestPhashScore > 0);
+      !!finalPayload.exactPhashMatch ||
+      (typeof finalPayload.bestPhashScore === "number" &&
+        finalPayload.bestPhashScore > 0);
     throw new VerificationLookupError(
       hasPhashClue
-        ? "동일한 SHA-256 원본은 찾지 못했습니다. 서버에 같은 파일 바이트가 등록된 기록은 없고, pHash 유사 후보만 있습니다."
-        : "동일한 SHA-256 원본을 찾지 못했습니다. 앱이 저장한 원본 사진/영상을 다시 선택해 주세요.",
+          ? "No exact SHA-256 original was found. The server has no record with identical file bytes, but pHash-based similar candidates are available."
+          : "No exact SHA-256 original was found. Please select the original photo or video saved by the app.",
       {
-        similarMatches: payload.similarMatches || [],
-        bestPhashScore: payload.bestPhashScore ?? null,
-        exactPhashMatch: payload.exactPhashMatch ?? null,
+        similarMatches: finalPayload.similarMatches || [],
+        bestPhashScore: finalPayload.bestPhashScore ?? null,
+        exactPhashMatch: finalPayload.exactPhashMatch ?? null,
+        candidates,
       }
     );
   }
   return {
-    verification: payload.verification,
-    exactMatchType: "sha256",
-    bestPhashScore: payload.bestPhashScore ?? null,
-    exactPhashMatch: payload.exactPhashMatch ?? null,
-    similarMatches: payload.similarMatches || [],
+    verification: finalPayload.verification ?? null,
+    exactMatchType: finalPayload.exactMatchType ?? null,
+    bestPhashScore: finalPayload.bestPhashScore ?? null,
+    exactPhashMatch: finalPayload.exactPhashMatch ?? null,
+    similarMatches: finalPayload.similarMatches || [],
+    candidates,
   };
+}
+
+async function searchHashesRemote(input: {
+  sha256: string;
+  phash: string | null;
+  mediaType: MediaType;
+  fileName: string;
+  mimeType: string;
+  owner?: string | null;
+}): Promise<{
+  verification?: VerificationLookupPayload | null;
+  similarMatches?: SimilarVerificationMatch[];
+  bestPhashScore?: number | null;
+  exactPhashMatch?: VerificationSearchCandidate | null;
+  exactMatchType?: "sha256" | null;
+  candidates?: VerificationSearchCandidate[];
+}> {
+  const res = await requestJson(`${API_BASE_URL}/v1/verify/search-hashes`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sha256: input.sha256,
+      phash: input.phash,
+      mediaType: input.mediaType,
+      fileName: input.fileName,
+      mimeType: input.mimeType,
+      owner: input.owner?.trim() || null,
+    }),
+  });
+  if (!res.ok) {
+    const body = (await res.json<{ message?: string }>().catch(
+      () => ({ message: undefined })
+    )) as { message?: string };
+    throw new Error(body.message || `Hash verification failed (${res.status})`);
+  }
+  return await res.json<{
+    verification?: VerificationLookupPayload | null;
+    similarMatches?: SimilarVerificationMatch[];
+    bestPhashScore?: number | null;
+    exactPhashMatch?: VerificationSearchCandidate | null;
+    exactMatchType?: "sha256" | null;
+    candidates?: VerificationSearchCandidate[];
+  }>();
 }

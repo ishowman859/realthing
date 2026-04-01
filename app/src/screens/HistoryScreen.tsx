@@ -46,9 +46,9 @@ export default function HistoryScreen({
 
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp * 1000);
-    return date.toLocaleString("ko-KR", {
+    return date.toLocaleString("en-US", {
       year: "numeric",
-      month: "2-digit",
+      month: "short",
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
@@ -73,27 +73,27 @@ export default function HistoryScreen({
       </View>
 
       <View style={styles.fieldRow}>
-        <Text style={styles.fieldLabel}>모드</Text>
+        <Text style={styles.fieldLabel}>Mode</Text>
         <Text style={styles.fieldValue}>{item.mode.toUpperCase()}</Text>
       </View>
 
       {item.serial ? (
         <View style={styles.fieldRow}>
-          <Text style={styles.fieldLabel}>시리얼</Text>
+          <Text style={styles.fieldLabel}>Serial</Text>
           <Text style={styles.fieldValueMono}>{item.serial}</Text>
         </View>
       ) : null}
 
       {item.onchainTimestampMs ? (
         <View style={styles.fieldRow}>
-          <Text style={styles.fieldLabel}>온체인 시각</Text>
+          <Text style={styles.fieldLabel}>Anchored</Text>
           <Text style={styles.fieldValue}>
-            {new Date(item.onchainTimestampMs).toLocaleString("ko-KR")}
+            {new Date(item.onchainTimestampMs).toLocaleString("en-US")}
           </Text>
         </View>
       ) : null}
 
-      {item.mode === "sha256" && item.sha256 ? (
+      {item.sha256 ? (
         <View style={styles.fieldRow}>
           <Text style={styles.fieldLabel}>SHA-256</Text>
           <Text style={styles.fieldValueMono} numberOfLines={2}>
@@ -102,7 +102,7 @@ export default function HistoryScreen({
         </View>
       ) : null}
 
-      {item.mode === "phash" && item.phash ? (
+      {item.phash ? (
         <View style={styles.fieldRow}>
           <Text style={styles.fieldLabel}>pHash</Text>
           <Text style={styles.fieldValueMono} numberOfLines={2}>
@@ -116,7 +116,7 @@ export default function HistoryScreen({
         onPress={() => openLink(item.verificationUrl)}
         activeOpacity={0.7}
       >
-        <Text style={styles.linkText}>검증 페이지</Text>
+        <Text style={styles.linkText}>Open verification page</Text>
         <Ionicons name="open-outline" size={18} color={ui.primary} />
       </TouchableOpacity>
     </View>
@@ -133,7 +133,7 @@ export default function HistoryScreen({
         >
           <Ionicons name="arrow-back" size={24} color={ui.text} />
         </TouchableOpacity>
-        <Text style={styles.topBarTitle}>히스토리</Text>
+        <Text style={styles.topBarTitle}>History</Text>
         <TouchableOpacity
           onPress={onLoadRecords}
           style={styles.iconButton}
@@ -146,16 +146,16 @@ export default function HistoryScreen({
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={ui.primary} />
-          <Text style={styles.loadingText}>불러오는 중…</Text>
+          <Text style={styles.loadingText}>Loading records...</Text>
         </View>
       ) : records.length === 0 ? (
         <View style={styles.centered}>
           <View style={styles.emptyIconWrap}>
             <Ionicons name="images-outline" size={40} color={ui.textMuted} />
           </View>
-          <Text style={styles.emptyText}>등록된 기록이 없어요</Text>
+          <Text style={styles.emptyText}>No records yet</Text>
           <Text style={styles.emptySubtext}>
-            촬영 후 등록하면 여기에 쌓여요
+            Registered items will appear here.
           </Text>
         </View>
       ) : (
@@ -258,47 +258,47 @@ const styles = StyleSheet.create({
   },
   indexText: {
     color: ui.primary,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "800",
   },
   dateText: {
-    color: ui.textSecondary,
-    fontSize: 13,
-    fontWeight: "500",
+    color: ui.textMuted,
+    fontSize: 12,
+    fontWeight: "600",
   },
   fieldRow: {
     marginBottom: 12,
   },
   fieldLabel: {
-    color: ui.textSecondary,
+    color: ui.textMuted,
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
+    textTransform: "uppercase",
     marginBottom: 4,
   },
   fieldValue: {
     color: ui.text,
-    fontSize: 15,
-    fontWeight: "500",
-    lineHeight: 22,
+    fontSize: 14,
+    fontWeight: "600",
   },
   fieldValueMono: {
     color: ui.text,
-    fontSize: 13,
-    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    lineHeight: 20,
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: Platform.select({ ios: "Menlo", android: "monospace" }),
   },
   linkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 8,
+    marginTop: 6,
     paddingTop: 14,
     borderTopWidth: 1,
     borderTopColor: ui.borderLight,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   linkText: {
     color: ui.primary,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "700",
   },
 });

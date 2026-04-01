@@ -1,4 +1,4 @@
-export function similarityFromPhash(phashA, phashB) {
+export function hammingDistanceFromPhash(phashA, phashB) {
   if (!phashA || !phashB || phashA.length !== phashB.length) return 0;
   let distance = 0;
   for (let i = 0; i < phashA.length; i++) {
@@ -11,6 +11,12 @@ export function similarityFromPhash(phashA, phashB) {
       xor >>= 1;
     }
   }
+  return distance;
+}
+
+export function similarityFromPhash(phashA, phashB) {
+  if (!phashA || !phashB || phashA.length !== phashB.length) return 0;
+  const distance = hammingDistanceFromPhash(phashA, phashB);
   const totalBits = phashA.length * 4;
   const similarity = ((totalBits - distance) / totalBits) * 100;
   return Math.max(0, Math.min(100, Number(similarity.toFixed(2))));

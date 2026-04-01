@@ -1,13 +1,22 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { computePhash, computeSha256 } from "../utils/phash";
 import { extractVideoPhashKeyframes } from "../utils/videoPhash";
 import {
   HashMode,
   VerificationAssetRecord,
+  VerificationLookupPayload,
   listAssets,
   registerAsset,
   registerSha256Ingest,
+  recheckVerificationByToken,
 } from "../utils/verityApi";
+import {
+  clearPendingAnchor,
+  readPendingAnchor,
+  writePendingAnchor,
+} from "../utils/pendingAnchorStore";
+import { sendAnchorCompletedNotification } from "../utils/anchorNotifications";
+import { createTeeProofForSha256 } from "../utils/tee";
 export type RegistrationStatus =
   | "idle"
   | "computing_hash"
@@ -16,6 +25,18 @@ export type RegistrationStatus =
   | "confirming"
   | "success"
   | "error";
+
+export type AnchorMonitorStatus = "idle" | "pending" | "anchored" | "error";
+
+export interface AnchorMonitorState {
+  status: AnchorMonitorStatus;
+  token: string | null;
+  verificationUrl: string | null;
+  serial: string | null;
+  message: string | null;
+  lastCheckedAtMs: number | null;
+  anchoredAtMs: number | null;
+}
 
 interface VerityHashState {
   status: RegistrationStatus;
@@ -28,6 +49,7 @@ interface VerityHashState {
   error: string | null;
   records: VerificationAssetRecord[];
   loadingRecords: boolean;
+  anchorMonitor: AnchorMonitorState;
 }
 
 export function useVerityHash(ownerAddress: string) {
@@ -42,7 +64,124 @@ export function useVerityHash(ownerAddress: string) {
     error: null,
     records: [],
     loadingRecords: false,
+    anchorMonitor: {
+      status: "idle",
+      token: null,
+      verificationUrl: null,
+      serial: null,
+      message: null,
+      lastCheckedAtMs: null,
+      anchoredAtMs: null,
+    },
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const pending = await readPendingAnchor();
+      if (!pending || cancelled) return;
+      setState((prev) => ({
+        ...prev,
+        verificationUrl: prev.verificationUrl || pending.verificationUrl,
+        anchorMonitor: {
+          status: "pending",
+          token: pending.token,
+          verificationUrl: pending.verificationUrl,
+          serial: pending.serial || null,
+          message: "Batch anchor pending. The app will keep checking after you reopen it.",
+          lastCheckedAtMs: pending.lastCheckedAtMs ?? null,
+          anchoredAtMs: null,
+        },
+      }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (state.anchorMonitor.status !== "pending" || !state.anchorMonitor.token) return;
+
+    let cancelled = false;
+    let notifying = false;
+
+    const poll = async () => {
+      try {
+        const payload = await recheckVerificationByToken(state.anchorMonitor.token!);
+        if (cancelled) return;
+        const anchored = isVerificationAnchored(payload);
+        const checkedAtMs = Date.now();
+
+        if (anchored) {
+          await clearPendingAnchor();
+          if (!notifying) {
+            notifying = true;
+            await sendAnchorCompletedNotification({
+              serial: payload.serial || state.anchorMonitor.serial,
+              verificationUrl: state.anchorMonitor.verificationUrl,
+            }).catch(() => undefined);
+          }
+          setState((prev) => ({
+            ...prev,
+            anchorMonitor: {
+              status: "anchored",
+              token: prev.anchorMonitor.token,
+              verificationUrl: prev.anchorMonitor.verificationUrl,
+              serial: payload.serial || prev.anchorMonitor.serial,
+              message: "Batch anchor completed. You can review the Merkle and on-chain details on the verification screen.",
+              lastCheckedAtMs: checkedAtMs,
+              anchoredAtMs: payload.onchainTimestampMs ?? checkedAtMs,
+            },
+          }));
+          return;
+        }
+
+        await writePendingAnchor({
+          token: state.anchorMonitor.token!,
+          verificationUrl: state.anchorMonitor.verificationUrl || "",
+          serial: payload.serial || state.anchorMonitor.serial,
+          owner: payload.owner || null,
+          mode: payload.mode || null,
+          sha256: payload.sha256 || null,
+          phash: payload.phash || null,
+          createdAtMs: checkedAtMs,
+          lastCheckedAtMs: checkedAtMs,
+        });
+
+        setState((prev) => ({
+          ...prev,
+          anchorMonitor: {
+            ...prev.anchorMonitor,
+            status: "pending",
+            serial: payload.serial || prev.anchorMonitor.serial,
+            message: "Batch anchor pending. Rechecking the server for updated status.",
+            lastCheckedAtMs: checkedAtMs,
+          },
+        }));
+      } catch (error: any) {
+        if (cancelled) return;
+        setState((prev) => ({
+          ...prev,
+          anchorMonitor: {
+            ...prev.anchorMonitor,
+            status: "pending",
+            message: `Batch status recheck failed: ${error?.message || "Please try again in a moment."}`,
+            lastCheckedAtMs: Date.now(),
+          },
+        }));
+      }
+    };
+
+    void poll();
+    const timer = setInterval(() => {
+      void poll();
+    }, 5000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [state.anchorMonitor.status, state.anchorMonitor.token, state.anchorMonitor.serial, state.anchorMonitor.verificationUrl]);
 
   const registerPhoto = useCallback(
     async (
@@ -58,7 +197,7 @@ export function useVerityHash(ownerAddress: string) {
           ...prev,
           status: "error",
           error:
-            "소유자(owner) 주소가 없습니다. app.json extra.verityOwnerAddress 또는 EXPO_PUBLIC_VERITY_OWNER_ADDRESS 를 설정하세요.",
+            "Missing owner address. Set app.json extra.verityOwnerAddress or EXPO_PUBLIC_VERITY_OWNER_ADDRESS.",
         }));
         return;
       }
@@ -113,6 +252,12 @@ export function useVerityHash(ownerAddress: string) {
             status: "confirming",
           }));
 
+          const teeProof = await createTeeProofForSha256({
+            owner,
+            sha256,
+            serial,
+          });
+
           const record = await registerSha256Ingest({
             owner,
             sha256,
@@ -127,6 +272,7 @@ export function useVerityHash(ownerAddress: string) {
                   : Date.now(),
             aiRiskScore,
             metadata: mergedMeta,
+            teeProof,
           });
 
           setState((prev) => ({
@@ -136,7 +282,18 @@ export function useVerityHash(ownerAddress: string) {
             verificationUrl: record.verificationUrl,
             qrCodeUrl: record.qrCodeUrl,
             records: [record, ...prev.records],
+            anchorMonitor: {
+              status: "pending",
+              token: extractVerificationToken(record.verificationUrl),
+              verificationUrl: record.verificationUrl,
+              serial: record.serial || serial,
+              message: "Batch anchor pending. The app will keep checking after you leave this screen.",
+              lastCheckedAtMs: null,
+              anchoredAtMs: null,
+            },
           }));
+
+          await persistPendingAnchorRecord(record, serial, sha256, phashVal);
 
           return {
             phash: phashVal,
@@ -194,7 +351,18 @@ export function useVerityHash(ownerAddress: string) {
           verificationUrl: record.verificationUrl,
           qrCodeUrl: record.qrCodeUrl,
           records: [record, ...prev.records],
+          anchorMonitor: {
+            status: "pending",
+            token: extractVerificationToken(record.verificationUrl),
+            verificationUrl: record.verificationUrl,
+            serial: record.serial || serial,
+            message: "Batch anchor pending. The app will keep checking after you leave this screen.",
+            lastCheckedAtMs: null,
+            anchoredAtMs: null,
+          },
         }));
+
+        await persistPendingAnchorRecord(record, serial, sha256, phash);
 
         return {
           phash,
@@ -206,7 +374,7 @@ export function useVerityHash(ownerAddress: string) {
         setState((prev) => ({
           ...prev,
           status: "error",
-          error: error.message || "등록에 실패했습니다",
+          error: error.message || "Registration failed.",
         }));
       }
     },
@@ -239,6 +407,7 @@ export function useVerityHash(ownerAddress: string) {
       qrCodeUrl: null,
       hashMode: null,
       error: null,
+      anchorMonitor: prev.anchorMonitor,
     }));
   }, []);
 
@@ -259,4 +428,43 @@ function createSerial(mode: HashMode): string {
     .toString()
     .padStart(6, "0");
   return `VRT-${mode.toUpperCase()}-${yyyy}${mm}${dd}-${suffix}`;
+}
+
+function extractVerificationToken(verificationUrl?: string | null): string | null {
+  const url = String(verificationUrl || "").trim();
+  if (!url) return null;
+  const clean = url.replace(/\/+$/, "");
+  const token = clean.split("/").pop();
+  return token || null;
+}
+
+async function persistPendingAnchorRecord(
+  record: VerificationAssetRecord,
+  serial: string,
+  sha256: string,
+  phash: string | null
+) {
+  const token = extractVerificationToken(record.verificationUrl);
+  if (!token) return;
+  await writePendingAnchor({
+    token,
+    verificationUrl: record.verificationUrl,
+    serial: record.serial || serial,
+    owner: record.owner || null,
+    mode: record.mode || null,
+    sha256: record.sha256 || sha256,
+    phash: record.phash || phash || null,
+    createdAtMs: Date.now(),
+    lastCheckedAtMs: null,
+  });
+}
+
+function isVerificationAnchored(payload: VerificationLookupPayload): boolean {
+  return !!(
+    payload.onchainTimestampMs ||
+    payload.batchAnchor?.txHash ||
+    payload.batchMerkleRoots?.primary ||
+    payload.batchMerkleRoots?.sha256 ||
+    payload.batchMerkleRoots?.phash
+  );
 }

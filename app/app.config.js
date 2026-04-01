@@ -11,7 +11,6 @@ module.exports = () => ({
     ...expo.extra,
     verityApiUrl:
       process.env.EXPO_PUBLIC_VERITY_API_URL?.trim() ||
-      expo.extra?.verityApiUrl ||
       "https://api.veritychains.com",
     verityOwnerAddress:
       process.env.EXPO_PUBLIC_VERITY_OWNER_ADDRESS?.trim() ||

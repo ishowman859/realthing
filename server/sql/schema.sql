@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS assets (
   sha256_merkle_proof_json JSONB,
   phash_merkle_leaf_hash TEXT,
   phash_merkle_proof_json JSONB,
+  sha256_combined_hash TEXT,
+  phash_combined_hash TEXT,
   ai_risk_score INTEGER,
   metadata_json JSONB,
   chain_tx_signature TEXT,
@@ -42,6 +44,12 @@ CREATE INDEX IF NOT EXISTS idx_assets_mode
 
 CREATE INDEX IF NOT EXISTS idx_assets_sha256
   ON assets (sha256);
+
+CREATE INDEX IF NOT EXISTS idx_assets_sha256_combined_hash
+  ON assets (sha256_combined_hash);
+
+CREATE INDEX IF NOT EXISTS idx_assets_phash_combined_hash
+  ON assets (phash_combined_hash);
 
 CREATE INDEX IF NOT EXISTS idx_assets_token
   ON assets (token);
@@ -92,6 +100,8 @@ ALTER TABLE assets ADD COLUMN IF NOT EXISTS sha256_merkle_leaf_hash TEXT;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS sha256_merkle_proof_json JSONB;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS phash_merkle_leaf_hash TEXT;
 ALTER TABLE assets ADD COLUMN IF NOT EXISTS phash_merkle_proof_json JSONB;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS sha256_combined_hash TEXT;
+ALTER TABLE assets ADD COLUMN IF NOT EXISTS phash_combined_hash TEXT;
 ALTER TABLE onchain_minute_batches ADD COLUMN IF NOT EXISTS block_number BIGINT;
 ALTER TABLE onchain_minute_batches ADD COLUMN IF NOT EXISTS sha256_merkle_root TEXT;
 ALTER TABLE onchain_minute_batches ADD COLUMN IF NOT EXISTS phash_merkle_root TEXT;

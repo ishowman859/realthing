@@ -3,7 +3,6 @@ import * as ImageManipulator from "expo-image-manipulator";
 import { Buffer } from "buffer";
 import jpeg from "jpeg-js";
 import ExifParser from "exif-parser";
-import { checkAntiSpoof } from "./verityApi";
 
 const ANALYSIS_SIZE = 160;
 
@@ -17,8 +16,6 @@ export interface FirstStageFilterResult {
     blurVariance: number;
     periodicityScore: number;
     metadataRisk: number;
-    antiSpoofScore: number | null;
-    antiSpoofModel: string | null;
   };
 }
 
@@ -32,10 +29,9 @@ export async function runFirstStageFilter(
   imageUri: string,
   options?: { skipPeriodicity?: boolean }
 ): Promise<FirstStageFilterResult> {
-  const [pixelMetrics, metadataRiskResult, antiSpoofResult] = await Promise.all([
+  const [pixelMetrics, metadataRiskResult] = await Promise.all([
     analyzePixels(imageUri, options),
     analyzeMetadataRisk(imageUri),
-    checkAntiSpoof(imageUri),
   ]);
 
   const reasons: string[] = [];
@@ -44,45 +40,24 @@ export async function runFirstStageFilter(
   // Blur risk
   if (pixelMetrics.blurVariance < 35) {
     score += 30;
-    reasons.push("선명도가 낮아 재촬영/흔들림 가능성이 높습니다.");
+      reasons.push("Low sharpness suggests blur, recapture, or motion.");
   } else if (pixelMetrics.blurVariance < 55) {
     score += 15;
-    reasons.push("이미지 선명도가 낮은 편입니다.");
+      reasons.push("The image sharpness looks slightly low.");
   }
 
   // Periodicity risk (screen pixel grid / moire proxy)
   if (pixelMetrics.periodicityScore > 0.34) {
     score += 35;
-    reasons.push("화면 격자/모아레 유사 패턴이 감지되었습니다.");
+      reasons.push("A screen-grid or moire-like pattern was detected.");
   } else if (pixelMetrics.periodicityScore > 0.24) {
     score += 18;
-    reasons.push("주기적 패턴이 다소 강하게 감지되었습니다.");
+      reasons.push("A moderately strong repeating pattern was detected.");
   }
 
   if (metadataRiskResult.risk > 0) {
     score += metadataRiskResult.risk;
     reasons.push(...metadataRiskResult.reasons);
-  }
-
-  // [각주1] Silent-Face-Anti-Spoofing 점수를 추가 반영합니다.
-  if (antiSpoofResult) {
-    const spoofPct = Math.round(antiSpoofResult.spoofProbability * 100);
-    if (antiSpoofResult.spoofProbability >= 0.75) {
-      score += 40;
-      reasons.push(
-        `Silent-Face-Anti-Spoofing 모델이 재촬영 가능성을 높게 감지했습니다 (${spoofPct}%).`
-      );
-    } else if (antiSpoofResult.spoofProbability >= 0.55) {
-      score += 22;
-      reasons.push(
-        `Silent-Face-Anti-Spoofing 모델이 재촬영 의심 신호를 감지했습니다 (${spoofPct}%).`
-      );
-    } else if (antiSpoofResult.spoofProbability >= 0.35) {
-      score += 10;
-      reasons.push(
-        `Silent-Face-Anti-Spoofing 모델에서 약한 의심 신호가 감지되었습니다 (${spoofPct}%).`
-      );
-    }
   }
 
   score = Math.max(0, Math.min(100, score));
@@ -102,10 +77,6 @@ export async function runFirstStageFilter(
       blurVariance: round2(pixelMetrics.blurVariance),
       periodicityScore: round3(pixelMetrics.periodicityScore),
       metadataRisk: metadataRiskResult.risk,
-      antiSpoofScore: antiSpoofResult
-        ? Math.round(antiSpoofResult.spoofProbability * 100)
-        : null,
-      antiSpoofModel: antiSpoofResult?.model ?? null,
     },
   };
 }
@@ -128,7 +99,7 @@ async function analyzePixels(
   );
 
   if (!resized.base64) {
-    throw new Error("이미지 분석용 base64 변환에 실패했습니다.");
+    throw new Error("Failed to create a base64 image for analysis.");
   }
 
   const bytes = Buffer.from(resized.base64, "base64");
@@ -175,22 +146,22 @@ async function analyzeMetadataRisk(imageUri: string): Promise<{
         softwareText.includes("editor")
       ) {
         risk += 25;
-        reasons.push("메타데이터에 편집 소프트웨어 흔적이 있습니다.");
+          reasons.push("Metadata indicates editing software.");
       } else {
         risk += 10;
-        reasons.push("메타데이터에 후처리 소프트웨어 정보가 있습니다.");
+          reasons.push("Metadata includes post-processing software information.");
       }
     }
 
     // 카메라 정보가 전혀 없으면 약한 리스크만 부여(과탐 방지)
     if (!make && !model) {
       risk += 8;
-      reasons.push("카메라 기기 메타데이터가 없어 진본성 판단이 제한됩니다.");
+        reasons.push("Camera device metadata is missing, which limits authenticity checks.");
     }
   } catch {
     // EXIF가 없거나 파싱 실패하면 약한 리스크만 부여
     risk += 6;
-    reasons.push("메타데이터를 확인할 수 없어 검증 신뢰도가 낮습니다.");
+      reasons.push("Metadata could not be read, which lowers verification confidence.");
   }
 
   return { risk, reasons };

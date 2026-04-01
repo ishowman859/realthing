@@ -37,6 +37,39 @@ body {
   gap: 10px;
   flex-wrap: wrap;
 }
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.section-sub {
+  margin: 6px 0 0;
+  color: #9aa0b4;
+  font-size: 13px;
+}
+.grid {
+  display: grid;
+  gap: 12px;
+}
+.grid.two {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  margin-bottom: 12px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: #c8cce0;
+}
+.field.check {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding-top: 28px;
+}
 .input {
   flex: 1;
   min-width: 240px;
@@ -45,6 +78,10 @@ body {
   border: 1px solid #2a2a4a;
   border-radius: 10px;
   padding: 10px 12px;
+}
+.textarea {
+  min-height: 120px;
+  resize: vertical;
 }
 .btn {
   border: 0;
@@ -63,6 +100,21 @@ body {
   margin-top: 10px;
   font-size: 13px;
   color: #9aa0b4;
+}
+.facts {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 8px 12px;
+  margin: 14px 0 0;
+}
+.facts dt {
+  color: #9aa0b4;
+  font-size: 12px;
+}
+.facts dd {
+  margin: 0;
+  word-break: break-all;
+  font-size: 13px;
 }
 table {
   width: 100%;
@@ -89,4 +141,13 @@ th {
 }
 .bad {
   color: #ff6b6b;
+}
+
+@media (max-width: 720px) {
+  .section-head {
+    flex-direction: column;
+  }
+  .facts {
+    grid-template-columns: 1fr;
+  }
 }

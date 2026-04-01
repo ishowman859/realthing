@@ -144,7 +144,7 @@ export async function stampHashProofWatermark(
     formatAsRGBA: true,
   });
   if (!decoded?.data || !decoded.width || !decoded.height) {
-    throw new Error("이미지 디코딩 실패");
+    throw new Error("Image decoding failed.");
   }
 
   const width = decoded.width;
@@ -171,7 +171,7 @@ export async function stampHashProofWatermark(
   }
 
   if (lines.length === 0) {
-    throw new Error("표시할 해시가 없습니다");
+    throw new Error("There is no hash to display.");
   }
 
   const boxH = pad * 2 + lines.length * lineH;

@@ -54,7 +54,7 @@ if (
   /^http:\/\//i.test(API_BASE)
 ) {
   API_BASE_ERROR =
-    "HTTPS 페이지에서는 HTTP 백엔드를 호출할 수 없습니다. HTTPS API 주소를 사용하세요.";
+    "This HTTPS page cannot call an HTTP backend. Use an HTTPS API host instead.";
 }
 
 const I18N = {
@@ -501,10 +501,6 @@ function detectLanguage() {
   if (forced === "ko" || forced === "en" || forced === "ja" || forced === "zh") {
     return forced;
   }
-  const browserLang = (navigator.language || "en").toLowerCase();
-  if (browserLang.startsWith("ko")) return "ko";
-  if (browserLang.startsWith("ja")) return "ja";
-  if (browserLang.startsWith("zh")) return "zh";
   return "en";
 }
 
@@ -542,7 +538,7 @@ async function loadImageBitmapFromFile(file) {
     const img = await new Promise((resolve, reject) => {
       const el = new Image();
       el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("이미지를 읽지 못했습니다."));
+      el.onerror = () => reject(new Error("Failed to load the image."));
       el.src = url;
     });
     return img;
@@ -560,7 +556,7 @@ async function standardizeBrowserImageForHashing(file) {
   const sourceWidth = Number(source.width || source.videoWidth || 0);
   const sourceHeight = Number(source.height || source.videoHeight || 0);
   if (!Number.isFinite(sourceWidth) || !Number.isFinite(sourceHeight) || sourceWidth <= 0 || sourceHeight <= 0) {
-    throw new Error("이미지 크기를 확인하지 못했습니다.");
+    throw new Error("Could not determine the image dimensions.");
   }
 
   const targetSize = computeStandardPhotoTargetSize(sourceWidth, sourceHeight);
@@ -568,7 +564,7 @@ async function standardizeBrowserImageForHashing(file) {
   canvas.width = targetSize.width;
   canvas.height = targetSize.height;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("브라우저 캔버스를 초기화하지 못했습니다.");
+  if (!ctx) throw new Error("Could not initialize the browser canvas.");
   ctx.drawImage(source, 0, 0, targetSize.width, targetSize.height);
 
   const blob = await canvasToBlob(canvas, "image/jpeg", STANDARD_PHOTO_JPEG_QUALITY);
@@ -608,7 +604,7 @@ function canvasToBlob(canvas, type, quality) {
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => {
       if (blob) resolve(blob);
-      else reject(new Error("표준 JPG 생성에 실패했습니다."));
+      else reject(new Error("Failed to generate the standardized JPG."));
     }, type, quality);
   });
 }
@@ -622,57 +618,28 @@ function buildStandardizedImageName(originalName) {
 async function computeBrowserImagePhash(file) {
   const source = await loadImageBitmapFromFile(file);
   const canvas = document.createElement("canvas");
-  canvas.width = 32;
-  canvas.height = 32;
+  canvas.width = 8;
+  canvas.height = 8;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("브라우저 캔버스를 초기화하지 못했습니다.");
-  ctx.drawImage(source, 0, 0, 32, 32);
-  const { data } = ctx.getImageData(0, 0, 32, 32);
-  const matrix = [];
-  for (let y = 0; y < 32; y += 1) {
-    const row = [];
-    for (let x = 0; x < 32; x += 1) {
-      const idx = (y * 32 + x) * 4;
-      const gray = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
-      row.push(gray);
-    }
-    matrix.push(row);
+  if (!ctx) throw new Error("Could not initialize the browser canvas.");
+  ctx.drawImage(source, 0, 0, 8, 8);
+  const { data } = ctx.getImageData(0, 0, 8, 8);
+  const grayscale = [];
+  let total = 0;
+  for (let idx = 0; idx < data.length; idx += 4) {
+    const gray = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+    grayscale.push(gray);
+    total += gray;
   }
-
-  const dct = [];
-  for (let u = 0; u < 32; u += 1) {
-    dct[u] = [];
-    for (let v = 0; v < 32; v += 1) {
-      let sum = 0;
-      for (let x = 0; x < 32; x += 1) {
-        for (let y = 0; y < 32; y += 1) {
-          sum +=
-            matrix[x][y] *
-            Math.cos(((2 * x + 1) * u * Math.PI) / 64) *
-            Math.cos(((2 * y + 1) * v * Math.PI) / 64);
-        }
-      }
-      const cu = u === 0 ? 1 / Math.sqrt(2) : 1;
-      const cv = v === 0 ? 1 / Math.sqrt(2) : 1;
-      dct[u][v] = (cu * cv * sum) / 16;
-    }
-  }
-
-  const lowFreq = [];
-  for (let i = 0; i < 8; i += 1) {
-    for (let j = 0; j < 8; j += 1) {
-      if (i === 0 && j === 0) continue;
-      lowFreq.push(dct[i][j]);
-    }
-  }
-  const avg = lowFreq.reduce((sum, value) => sum + value, 0) / lowFreq.length;
-  let bits = lowFreq.map((value) => (value > avg ? "1" : "0")).join("");
-  while (bits.length < 64) bits += "0";
-  bits = bits.slice(0, 64);
+  const avg = total / grayscale.length;
 
   let hex = "";
-  for (let i = 0; i < 64; i += 4) {
-    hex += parseInt(bits.slice(i, i + 4), 2).toString(16);
+  for (let i = 0; i < grayscale.length; i += 4) {
+    let nibble = 0;
+    for (let j = 0; j < 4; j += 1) {
+      nibble = (nibble << 1) | (grayscale[i + j] >= avg ? 1 : 0);
+    }
+    hex += nibble.toString(16);
   }
   return hex;
 }
@@ -873,10 +840,10 @@ const el = {
   labelCreatedAt: document.getElementById("labelCreatedAt"),
   labelCapturedAt: document.getElementById("labelCapturedAt"),
   labelOnchainAt: document.getElementById("labelOnchainAt"),
-  labelOwner: document.getElementById("labelOwner"),
   labelLocation: document.getElementById("labelLocation"),
   labelHashInfo: document.getElementById("labelHashInfo"),
   locationSummary: document.getElementById("locationSummary"),
+  metadataSummary: document.getElementById("metadataSummary"),
   gpsVal: document.getElementById("gpsVal"),
   metadataVal: document.getElementById("metadataVal"),
   statusBadge: document.getElementById("statusBadge"),
@@ -884,11 +851,11 @@ const el = {
   createdAt: document.getElementById("createdAt"),
   capturedAt: document.getElementById("capturedAt"),
   onchainAt: document.getElementById("onchainAt"),
-  owner: document.getElementById("owner"),
   serial: document.getElementById("serial"),
   monitorAlert: document.getElementById("monitorAlert"),
   sha256: document.getElementById("sha256"),
   phash: document.getElementById("phash"),
+  combinedHash: document.getElementById("combinedHash"),
   merkleCard: document.getElementById("merkleCard"),
   merkleIntro: document.getElementById("merkleIntro"),
   merklePending: document.getElementById("merklePending"),
@@ -1010,6 +977,30 @@ function setText(node, value) {
   node.textContent = value && String(value).trim() ? String(value) : "-";
 }
 
+function summarizeMetadata(value) {
+  if (!value || typeof value !== "object") return "-";
+  const parts = [];
+  const pushIf = (label, raw) => {
+    const text = String(raw || "").trim();
+    if (!text) return;
+    parts.push(`${label}: ${text}`);
+  };
+  pushIf("Device", value.deviceModel);
+  pushIf("Maker", value.deviceMake);
+  pushIf("Software", value.software);
+  pushIf("Captured", value.dateTimeOriginal || value.captureTimestamp);
+  if (value.standardizedPhoto && typeof value.standardizedPhoto === "object") {
+    const width = Number(value.standardizedPhoto.width);
+    const height = Number(value.standardizedPhoto.height);
+    if (Number.isFinite(width) && Number.isFinite(height)) {
+      parts.push(`Standard JPG: ${width}x${height}`);
+    }
+  }
+  if (parts.length) return parts.join(" · ");
+  const keys = Object.keys(value);
+  return keys.length ? `${keys.length} metadata fields` : "-";
+}
+
 function renderMerkleChain(data) {
   const panel = el.merkleChainPanel;
   if (!panel) return;
@@ -1088,26 +1079,23 @@ function renderSearchMeta(result) {
   }
 
   el.searchMeta.hidden = false;
-  let summary = "SHA-256 exact match 없음";
+  let summary = "Candidate search result.";
   if (result?.exactMatchType === "sha256") {
-    summary = "SHA-256 exact match · 100% 일치";
+    summary = "A SHA-256 exact-match candidate was found. Select a candidate below to load its proof.";
   } else if (result?.exactPhashMatch) {
     summary =
-      "pHash exact match · 유사 판정 · 인코딩/재저장 때문에 SHA-256 exact와 pHash 100%가 아닐 수 있으며, 90% 전후도 신뢰 범위입니다.";
+      "A pHash exact-match candidate was found. Select a candidate below to load its proof.";
   } else if (typeof result?.bestPhashScore === "number") {
-    summary = `pHash 유사 후보 · ${Number(result.bestPhashScore).toFixed(2)}% · 인코딩/재저장 때문에 SHA-256 exact와 pHash 100%가 아닐 수 있으며, 90% 전후도 신뢰 범위입니다.`;
+    summary = `pHash-based candidate matches were found. Best similarity: ${Number(result.bestPhashScore).toFixed(2)}%. Select a candidate below to load its proof.`;
   }
   el.searchMetaSummary.textContent = summary;
 
   const parts = [];
   if (result.query?.sha256) parts.push(`SHA-256: ${result.query.sha256}`);
   if (result.query?.phash) parts.push(`pHash: ${result.query.phash}`);
-  if (result?.exactPhashMatch?.serial) {
-    parts.push(`pHash exact serial: ${result.exactPhashMatch.serial}`);
-  }
   el.searchMetaHashes.textContent = parts.join("\n");
 
-  const similar = Array.isArray(result.similarMatches) ? result.similarMatches : [];
+  const similar = Array.isArray(result.candidates) ? result.candidates : [];
   if (!el.similarMatchesWrap || !el.similarMatchesList) return;
   el.similarMatchesList.replaceChildren();
   if (similar.length === 0) {
@@ -1118,9 +1106,25 @@ function renderSearchMeta(result) {
   similar.forEach((item) => {
     if (!item) return;
     const li = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-outline";
     const score =
       typeof item.score === "number" ? item.score.toFixed(2) : String(item.score || "-");
-    li.textContent = `${score}% · ${item.serial || "-"} · ${item.owner || "-"}`;
+    const distance =
+      typeof item.hammingDistance === "number" ? item.hammingDistance : "-";
+    button.textContent = `${score}% · ${item.serial || "-"} · ${item.owner || "-"} · Hamming ${distance}`;
+    button.addEventListener("click", async () => {
+      try {
+        setStatus("warn", "Loading proof for the selected candidate...");
+        const verification = await fetchVerificationByToken(item.token);
+        render(verification);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : t("failedLoadVerification");
+        setStatus("bad", message);
+      }
+    });
+    li.appendChild(button);
     el.similarMatchesList.appendChild(li);
   });
 }
@@ -1325,6 +1329,17 @@ async function searchVerificationByHashes(file) {
   return res.json();
 }
 
+async function fetchVerificationByToken(token) {
+  const t = String(token || "").trim();
+  if (!t) throw new Error("token is required");
+  const res = await fetch(`${API_BASE}/v1/verify/${encodeURIComponent(t)}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.message || t("failedLoadVerification"));
+  }
+  return res.json();
+}
+
 function render(data) {
   setText(el.mode, (data.mode || "-").toUpperCase());
   setText(el.serial, data.serial || "-");
@@ -1337,10 +1352,14 @@ function render(data) {
     el.onchainAt,
     data.onchainTimestampMs ? formatDateTime(Number(data.onchainTimestampMs)) : "-"
   );
-  setText(el.owner, data.owner || "-");
   setText(el.locationSummary, data.locationSummary || "-");
+  setText(el.metadataSummary, summarizeMetadata(data.metadata));
   setText(el.sha256, data.sha256 || "-");
   setText(el.phash, data.phash || "-");
+  setText(
+    el.combinedHash,
+    data?.combinedHashes?.preferred || data?.merkleLeafHash || "-"
+  );
   if (el.gpsVal) {
     const lat = Number(data?.gps?.lat);
     const lng = Number(data?.gps?.lng);
@@ -1400,25 +1419,29 @@ function bindPhotoVerify() {
     }
     try {
       const result = await searchVerificationByHashes(file);
-      const data = result?.verification || null;
       renderSearchMeta(result);
-      if (!data) {
+      const candidates = Array.isArray(result?.candidates) ? result.candidates : [];
+      if (candidates.length === 0) {
         const score =
           typeof result?.bestPhashScore === "number"
             ? ` (best pHash ${Number(result.bestPhashScore).toFixed(2)}%)`
             : "";
         if (status) {
-          status.textContent = `등록 기록을 찾지 못했습니다${score}`;
+          status.textContent = `No registration record found${score}`;
           status.style.display = "block";
         }
-        setStatus("warn", `등록 기록을 찾지 못했습니다${score}`);
+        setStatus("warn", `No registration record found${score}`);
         renderMerkleStub();
         return;
       }
-      render(data);
+      renderMerkleStub();
+      setStatus(
+        result?.exactMatchType === "sha256" ? "ok" : "warn",
+        `${candidates.length} candidate matches found. Select one from the list to review its proof.`
+      );
       if (status) {
-        status.textContent = "";
-        status.style.display = "none";
+          status.textContent = `${candidates.length} candidate matches found. Choose one below.`;
+        status.style.display = "block";
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : t("loadFail");

@@ -40,6 +40,14 @@ const assetsBody = document.getElementById("assetsBody");
 const batchesBody = document.getElementById("batchesBody");
 const loadButton = document.getElementById("loadButton");
 const saveButton = document.getElementById("saveButton");
+const saveSolanaButton = document.getElementById("saveSolanaButton");
+const solanaRpcUrlInput = document.getElementById("solanaRpcUrl");
+const solanaClusterInput = document.getElementById("solanaCluster");
+const solanaCommitmentInput = document.getElementById("solanaCommitment");
+const solanaKeypairInput = document.getElementById("solanaKeypair");
+const solanaAnchorDisabledInput = document.getElementById("solanaAnchorDisabled");
+const solanaStatusText = document.getElementById("solanaStatusText");
+const solanaFacts = document.getElementById("solanaFacts");
 
 apiBaseInput.value = defaultApiBase;
 adminTokenInput.value = localStorage.getItem("verity_admin_token") || "";
@@ -56,6 +64,11 @@ function setStatus(text, isError = false) {
   statusText.className = `status ${isError ? "bad" : "ok"}`;
 }
 
+function setSolanaStatus(text, isError = false) {
+  solanaStatusText.textContent = text;
+  solanaStatusText.className = `status ${isError ? "bad" : "ok"}`;
+}
+
 async function adminFetch(path) {
   const token = adminTokenInput.value.trim();
   const base = apiBaseInput.value.trim().replace(/\/$/, "");
@@ -63,6 +76,24 @@ async function adminFetch(path) {
     headers: {
       "x-admin-token": token,
     },
+  });
+  if (!response.ok) {
+    const msg = await response.text();
+    throw new Error(`${response.status} ${msg}`);
+  }
+  return response.json();
+}
+
+async function adminJsonFetch(path, options = {}) {
+  const token = adminTokenInput.value.trim();
+  const base = apiBaseInput.value.trim().replace(/\/$/, "");
+  const response = await fetch(`${base}${path}`, {
+    method: options.method || "GET",
+    headers: {
+      "content-type": "application/json",
+      "x-admin-token": token,
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
   });
   if (!response.ok) {
     const msg = await response.text();
@@ -104,6 +135,46 @@ function renderBatches(rows) {
   }
 }
 
+function renderSolanaFacts(status) {
+  const rows = [
+    ["Configured", status?.configured ? "yes" : "no"],
+    ["Source", status?.source || "-"],
+    ["Public Key", status?.publicKey || "-"],
+    ["RPC URL", status?.rpcUrl || "-"],
+    ["Cluster", status?.cluster || "-"],
+    ["Commitment", status?.commitment || "-"],
+    ["Anchor Disabled", status?.anchorDisabled ? "yes" : "no"],
+    ["Runtime Keypair", status?.hasRuntimeKeypair ? "yes" : "no"],
+    ["Env Keypair", status?.hasEnvKeypair ? "yes" : "no"],
+    ["Updated At", fmt(status?.runtimeUpdatedAt)],
+  ];
+  solanaFacts.innerHTML = rows
+    .map(
+      ([label, value]) =>
+        `<dt>${label}</dt><dd class="${label.includes("Key") || label.includes("RPC") ? "mono" : ""}">${value}</dd>`
+    )
+    .join("");
+}
+
+function fillSolanaForm(status) {
+  solanaRpcUrlInput.value = status?.rpcUrl || "";
+  solanaClusterInput.value = status?.cluster || "";
+  solanaCommitmentInput.value = status?.commitment || "confirmed";
+  solanaAnchorDisabledInput.checked = !!status?.anchorDisabled;
+}
+
+async function loadSolanaStatus() {
+  const status = await adminFetch("/v1/admin/solana");
+  fillSolanaForm(status);
+  renderSolanaFacts(status);
+  setSolanaStatus(
+    status?.configured
+      ? `준비 완료: ${status.publicKey || "공개키 없음"}`
+      : "아직 온체인 앵커링 키가 설정되지 않았습니다.",
+    !status?.configured
+  );
+}
+
 async function loadAdminData() {
   setStatus("조회 중...");
   try {
@@ -115,12 +186,15 @@ async function loadAdminData() {
     healthText.textContent = JSON.stringify(health);
     renderAssets(assets);
     renderBatches(batches);
+    await loadSolanaStatus();
     setStatus("조회 완료");
   } catch (error) {
     setStatus(`조회 실패: ${error.message}`, true);
     healthText.textContent = "-";
     assetsBody.innerHTML = "";
     batchesBody.innerHTML = "";
+    solanaFacts.innerHTML = "";
+    setSolanaStatus("-", true);
   }
 }
 
@@ -131,4 +205,29 @@ loadButton.addEventListener("click", () => {
 saveButton.addEventListener("click", () => {
   localStorage.setItem("verity_admin_token", adminTokenInput.value.trim());
   setStatus("토큰 저장 완료");
+});
+
+saveSolanaButton.addEventListener("click", async () => {
+  setSolanaStatus("Solana 설정 저장 중...");
+  try {
+    const status = await adminJsonFetch("/v1/admin/solana", {
+      method: "POST",
+      body: {
+        rpcUrl: solanaRpcUrlInput.value.trim(),
+        cluster: solanaClusterInput.value.trim(),
+        commitment: solanaCommitmentInput.value.trim(),
+        keypair: solanaKeypairInput.value.trim(),
+        anchorDisabled: solanaAnchorDisabledInput.checked,
+      },
+    });
+    solanaKeypairInput.value = "";
+    renderSolanaFacts(status.status);
+    fillSolanaForm(status.status);
+    setSolanaStatus(
+      `저장 완료: ${status.status?.publicKey || status.saved?.publicKey || "-"}`,
+      false
+    );
+  } catch (error) {
+    setSolanaStatus(`저장 실패: ${error.message}`, true);
+  }
 });
