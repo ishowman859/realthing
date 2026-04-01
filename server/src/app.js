@@ -319,7 +319,7 @@ export function createApp() {
 
   const uploadPerMinuteByIp = createSlidingWindowRateLimit({
     windowMs: Number(process.env.UPLOAD_RATE_WINDOW_MS || 60_000),
-    max: Math.max(1, Number(process.env.UPLOAD_RATE_LIMIT_PER_MINUTE || 3)),
+    max: Math.max(1, Number(process.env.UPLOAD_RATE_LIMIT_PER_MINUTE || 15)),
     keyResolver: (req) => `upload-ip:${getClientIp(req)}`,
   });
 
