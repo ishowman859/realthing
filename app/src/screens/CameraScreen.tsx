@@ -299,9 +299,12 @@ export default function CameraScreen({
           width: photo.width,
           height: photo.height,
         });
+        const persistedStandardizedUri = await persistRegisteredPhotoUri(
+          standardizedPhoto.uri
+        );
         const captureTimestamp = Date.now();
         const exifGps = extractGpsFromExif(photo.exif);
-        setCapturedUri(standardizedPhoto.uri);
+        setCapturedUri(persistedStandardizedUri);
         setCaptureContext({
           captureTimestamp,
           gps: exifGps,
@@ -1395,6 +1398,27 @@ async function ensureSavableMediaUri(
   const targetUri = `${FileSystem.cacheDirectory}verity-save-${Date.now()}${
     mediaType === "video" ? ".mp4" : ".jpg"
   }`;
+  await FileSystem.copyAsync({
+    from: normalizedUri,
+    to: targetUri,
+  });
+  return targetUri;
+}
+
+async function persistRegisteredPhotoUri(uri: string): Promise<string> {
+  const normalizedUri = normalizeLocalMediaUri(uri);
+  const sourceInfo = await FileSystem.getInfoAsync(normalizedUri);
+  if (!sourceInfo.exists) {
+    throw new Error(`File does not exist: ${normalizedUri}`);
+  }
+
+  const targetDir = `${FileSystem.documentDirectory}registered-photos`;
+  const dirInfo = await FileSystem.getInfoAsync(targetDir);
+  if (!dirInfo.exists) {
+    await FileSystem.makeDirectoryAsync(targetDir, { intermediates: true });
+  }
+
+  const targetUri = `${targetDir}/verity-registered-${Date.now()}.jpg`;
   await FileSystem.copyAsync({
     from: normalizedUri,
     to: targetUri,
