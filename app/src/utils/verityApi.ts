@@ -321,6 +321,9 @@ export interface VerificationLookupPayload {
   capturedTimestampMs?: number;
   onchainTimestampMs?: number | null;
   gps?: { lat?: number | null; lng?: number | null } | null;
+  gpsSource?: string | null;
+  cellDerivedGps?: { lat?: number | null; lng?: number | null } | null;
+  radioEvidenceSummary?: string | null;
   locationSummary?: string | null;
   indexedBlockNumber?: number | null;
   merkleTreeType?: "sha256" | "phash";

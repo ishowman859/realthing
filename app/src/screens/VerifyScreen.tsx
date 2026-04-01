@@ -656,6 +656,17 @@ export default function VerifyScreen({
                   mono
                   small
                 />
+                <Field label="GPS source" value={data.gpsSource || extractGpsSource(data.metadata)} />
+                <Field
+                  label="Cell / Wi-Fi derived"
+                  value={formatCellDerivedCoordinates(data)}
+                  mono
+                  small
+                />
+                <Field
+                  label="Radio evidence"
+                  value={data.radioEvidenceSummary || summarizeRadioEvidence(data.metadata)}
+                />
                 <Field
                   label="Anchor storage"
                   value={
@@ -861,6 +872,57 @@ function summarizeMetadata(value: unknown): string {
   if (parts.length) return parts.join(" · ");
   const keys = Object.keys(meta);
   return keys.length ? `${keys.length} metadata fields` : "-";
+}
+
+function extractGpsSource(value: unknown): string {
+  if (!value || typeof value !== "object") return "-";
+  const meta = value as Record<string, unknown>;
+  const source = String(meta.gpsSource ?? "").trim();
+  if (source) return source;
+  const hasGps =
+    typeof (meta as any).gps?.lat === "number" &&
+    typeof (meta as any).gps?.lng === "number";
+  if (hasGps) return "Stored GPS";
+  const hasFused =
+    typeof (meta as any).androidRadioRawSnapshot?.gnss?.fusedLocation?.latitude === "number" &&
+    typeof (meta as any).androidRadioRawSnapshot?.gnss?.fusedLocation?.longitude === "number";
+  return hasFused ? "Android fused location" : "-";
+}
+
+function formatCellDerivedCoordinates(data: VerificationLookupPayload): string {
+  const lat = Number(data.cellDerivedGps?.lat);
+  const lng = Number(data.cellDerivedGps?.lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  }
+  const centroid = (data.metadata as any)?.serverOpencellidAnalysis?.centroid;
+  const metaLat = Number(centroid?.lat);
+  const metaLng = Number(centroid?.lng);
+  if (Number.isFinite(metaLat) && Number.isFinite(metaLng)) {
+    return `${metaLat.toFixed(4)}, ${metaLng.toFixed(4)}`;
+  }
+  return "-";
+}
+
+function summarizeRadioEvidence(value: unknown): string {
+  if (!value || typeof value !== "object") return "-";
+  const meta = value as Record<string, unknown>;
+  const explicit = String(meta.radioEvidenceSummary ?? "").trim();
+  if (explicit) return explicit;
+  const wifi = Array.isArray((meta as any).androidRadioRawSnapshot?.wifiScan)
+    ? (meta as any).androidRadioRawSnapshot.wifiScan.length
+    : 0;
+  const cell = Array.isArray((meta as any).androidRadioRawSnapshot?.cellScan)
+    ? (meta as any).androidRadioRawSnapshot.cellScan.length
+    : 0;
+  const ble = Array.isArray((meta as any).androidRadioRawSnapshot?.bleBeacons)
+    ? (meta as any).androidRadioRawSnapshot.bleBeacons.length
+    : 0;
+  const parts: string[] = [];
+  if (wifi > 0) parts.push(`Wi-Fi ${wifi}`);
+  if (cell > 0) parts.push(`Cells ${cell}`);
+  if (ble > 0) parts.push(`BLE ${ble}`);
+  return parts.length ? parts.join(" · ") : "-";
 }
 
 const styles = StyleSheet.create({

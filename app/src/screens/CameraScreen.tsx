@@ -14,6 +14,7 @@ import {
   InteractionManager,
   Platform,
   StatusBar,
+  PermissionsAndroid,
 } from "react-native";
 import { CameraView, CameraMode, useCameraPermissions } from "expo-camera";
 import * as MediaLibrary from "expo-media-library";
@@ -29,6 +30,10 @@ import {
   standardizePhotoForHashing,
   StandardizedPhotoMeta,
 } from "../utils/standardizePhoto";
+import {
+  getRadioEnvironmentSnapshot,
+  RadioEnvironmentSnapshot,
+} from "../native/VerityRadioEnvironment";
 import { ui } from "../theme/tokens";
 
 const barShadow =
@@ -47,6 +52,8 @@ interface CaptureContext {
   captureTimestamp: number;
   gps: { lat: number; lng: number } | null;
   standardizedPhoto: StandardizedPhotoMeta | null;
+  gpsSource: string | null;
+  radioEnvironment: RadioEnvironmentSnapshot | null;
 }
 
 interface CameraScreenProps {
@@ -307,16 +314,46 @@ export default function CameraScreen({
           width: photo.width,
           height: photo.height,
         });
+        const captureTimestamp = Date.now();
+        const exifGps = extractGpsFromExif(photo.exif);
         setCapturedUri(standardizedPhoto.uri);
         setCaptureContext({
-          captureTimestamp: Date.now(),
-          gps: extractGpsFromExif(photo.exif),
+          captureTimestamp,
+          gps: exifGps,
           standardizedPhoto: standardizedPhoto.meta,
+          gpsSource: exifGps ? "Photo EXIF GPS" : null,
+          radioEnvironment: null,
         });
         setFilterResult(null);
         setIsAnalyzing(true);
+        let radioEnvironment: RadioEnvironmentSnapshot | null = null;
         try {
-          const result = await runFirstStageFilter(photo.uri);
+          const [result, snapshot] = await Promise.all([
+            runFirstStageFilter(photo.uri).catch(() => ({
+              decision: "warn" as const,
+              score: 40,
+              reasons: ["The first-pass filter failed, so a retake is recommended."],
+              metrics: {
+                blurVariance: 0,
+                periodicityScore: 0,
+                metadataRisk: 0,
+              },
+            })),
+            collectRadioEnvironmentSnapshotSafe(),
+          ]);
+          radioEnvironment = snapshot;
+          const fusedGps = extractGpsFromRadioEnvironment(snapshot);
+          setCaptureContext({
+            captureTimestamp,
+            gps: exifGps ?? fusedGps,
+            standardizedPhoto: standardizedPhoto.meta,
+            gpsSource: exifGps
+              ? "Photo EXIF GPS"
+              : fusedGps
+                ? "Android fused location"
+                : null,
+            radioEnvironment: snapshot,
+          });
           setFilterResult(result);
         } catch {
           setFilterResult({
@@ -328,6 +365,17 @@ export default function CameraScreen({
               periodicityScore: 0,
               metadataRisk: 0,
             },
+          });
+          setCaptureContext({
+            captureTimestamp,
+            gps: exifGps ?? extractGpsFromRadioEnvironment(radioEnvironment),
+            standardizedPhoto: standardizedPhoto.meta,
+            gpsSource: exifGps
+              ? "Photo EXIF GPS"
+              : extractGpsFromRadioEnvironment(radioEnvironment)
+                ? "Android fused location"
+                : null,
+            radioEnvironment,
           });
         } finally {
           setIsAnalyzing(false);
@@ -365,6 +413,8 @@ export default function CameraScreen({
           captureTimestamp: Date.now(),
           gps: null,
           standardizedPhoto: null,
+          gpsSource: null,
+          radioEnvironment: null,
         });
       }
     } catch (err) {
@@ -428,6 +478,14 @@ export default function CameraScreen({
             captureMediaType: capturedMediaType,
             captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
             gps: captureContext?.gps ?? null,
+            gpsSource: captureContext?.gpsSource ?? null,
+            androidRadioRawSnapshot: captureContext?.radioEnvironment ?? null,
+            gnssDerivedLocation: toGnssDerivedLocation(
+              captureContext?.radioEnvironment ?? null
+            ),
+            radioEvidenceSummary: summarizeRadioEnvironment(
+              captureContext?.radioEnvironment ?? null
+            ),
             standardizedPhoto: captureContext?.standardizedPhoto ?? null,
           },
           { mediaType: capturedMediaType }
@@ -456,6 +514,14 @@ export default function CameraScreen({
                 captureMediaType: capturedMediaType,
                 captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
                 gps: captureContext?.gps ?? null,
+                gpsSource: captureContext?.gpsSource ?? null,
+                androidRadioRawSnapshot: captureContext?.radioEnvironment ?? null,
+                gnssDerivedLocation: toGnssDerivedLocation(
+                  captureContext?.radioEnvironment ?? null
+                ),
+                radioEvidenceSummary: summarizeRadioEnvironment(
+                  captureContext?.radioEnvironment ?? null
+                ),
                 standardizedPhoto: captureContext?.standardizedPhoto ?? null,
               },
               { mediaType: capturedMediaType }
@@ -474,6 +540,14 @@ export default function CameraScreen({
       captureMediaType: capturedMediaType,
       captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
       gps: captureContext?.gps ?? null,
+      gpsSource: captureContext?.gpsSource ?? null,
+      androidRadioRawSnapshot: captureContext?.radioEnvironment ?? null,
+      gnssDerivedLocation: toGnssDerivedLocation(
+        captureContext?.radioEnvironment ?? null
+      ),
+      radioEvidenceSummary: summarizeRadioEnvironment(
+        captureContext?.radioEnvironment ?? null
+      ),
       standardizedPhoto: captureContext?.standardizedPhoto ?? null,
     }, { mediaType: capturedMediaType });
   };
@@ -1537,6 +1611,82 @@ function extractGpsFromExif(exif: any): { lat: number; lng: number } | null {
   const lng = Number(exif.GPSLongitude ?? exif.longitude ?? exif.Longitude);
   if (Number.isNaN(lat) || Number.isNaN(lng)) return null;
   return { lat, lng };
+}
+
+async function collectRadioEnvironmentSnapshotSafe(): Promise<RadioEnvironmentSnapshot | null> {
+  if (Platform.OS !== "android") return null;
+  const granted = await requestRadioEnvironmentPermissions();
+  if (!granted) return null;
+  try {
+    return await getRadioEnvironmentSnapshot(2500);
+  } catch (error) {
+    console.warn("radioEnvironmentSnapshot", error);
+    return null;
+  }
+}
+
+async function requestRadioEnvironmentPermissions(): Promise<boolean> {
+  if (Platform.OS !== "android") return true;
+  const needs = [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+  if (PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION) {
+    needs.push(PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION);
+  }
+  if (PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE) {
+    needs.push(PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE);
+  }
+  if (Platform.Version >= 31) {
+    if (PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN) {
+      needs.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN);
+    }
+    if (PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT) {
+      needs.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
+    }
+  }
+  const result = (await PermissionsAndroid.requestMultiple(
+    needs as any
+  )) as Record<string, string>;
+  return needs.every(
+    (permission) => result[permission] === PermissionsAndroid.RESULTS.GRANTED
+  );
+}
+
+function extractGpsFromRadioEnvironment(
+  snapshot: RadioEnvironmentSnapshot | null | undefined
+): { lat: number; lng: number } | null {
+  const fused = snapshot?.gnss?.fusedLocation;
+  const lat = Number(fused?.latitude);
+  const lng = Number(fused?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return { lat, lng };
+}
+
+function toGnssDerivedLocation(
+  snapshot: RadioEnvironmentSnapshot | null | undefined
+): Record<string, unknown> | null {
+  const fused = snapshot?.gnss?.fusedLocation;
+  const lat = Number(fused?.latitude);
+  const lng = Number(fused?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  return {
+    latitude: lat,
+    longitude: lng,
+    accuracy: fused?.accuracy ?? null,
+    provider: fused?.provider ?? "android_fused_location",
+  };
+}
+
+function summarizeRadioEnvironment(
+  snapshot: RadioEnvironmentSnapshot | null | undefined
+): string | null {
+  if (!snapshot) return null;
+  const wifiCount = Array.isArray(snapshot.wifiScan) ? snapshot.wifiScan.length : 0;
+  const cellCount = Array.isArray(snapshot.cellScan) ? snapshot.cellScan.length : 0;
+  const bleCount = Array.isArray(snapshot.bleBeacons) ? snapshot.bleBeacons.length : 0;
+  const parts: string[] = [];
+  if (wifiCount > 0) parts.push(`Wi-Fi ${wifiCount}`);
+  if (cellCount > 0) parts.push(`Cells ${cellCount}`);
+  if (bleCount > 0) parts.push(`BLE ${bleCount}`);
+  return parts.length ? parts.join(" · ") : null;
 }
 
 function normalizeLocalMediaUri(uri: string): string {

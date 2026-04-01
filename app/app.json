@@ -2,7 +2,7 @@
   "expo": {
     "name": "Verity",
     "slug": "verity",
-    "version": "1.0.14",
+    "version": "1.0.17",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -17,7 +17,7 @@
       "bundleIdentifier": "com.verity.app",
       "infoPlist": {
         "NSCameraUsageDescription": "Camera access is required to capture media and register its pHash on-chain.",
-        "NSPhotoLibraryUsageDescription": "Photo library access is required to select media for verification and save captured results.",
+        "NSPhotoLibraryUsageDescription": "Photo library access is required to save captured results to your device.",
         "NSPhotoLibraryAddUsageDescription": "Photo library access is required to save captured media that includes verification hashes."
       }
     },
@@ -28,6 +28,13 @@
       "package": "com.verity.app",
       "permissions": [
         "CAMERA",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_WIFI_STATE",
+        "CHANGE_WIFI_STATE",
+        "READ_PHONE_STATE",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_CONNECT",
         "READ_MEDIA_IMAGES",
         "READ_MEDIA_VIDEO",
         "WRITE_EXTERNAL_STORAGE"
@@ -43,7 +50,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Photo library access is required to select media for verification."
+          "photosPermission": "Photo library access is required when Verity saves captured results to your device."
         }
       ],
       "expo-notifications",

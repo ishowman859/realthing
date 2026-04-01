@@ -81,6 +81,9 @@ const verifyBaseUrl = process.env.VERIFY_BASE_URL || "https://verify.verity.app/
 const corsOrigin = (process.env.CORS_ORIGIN || "*")
   .split(",")
   .map((v) => v.trim());
+const PELIAS_API_BASE_URL = String(process.env.PELIAS_API_BASE_URL || "").trim().replace(/\/+$/, "");
+const PELIAS_REVERSE_PATH = String(process.env.PELIAS_REVERSE_PATH || "/v1/reverse").trim();
+const PELIAS_ACCEPT_LANGUAGE = String(process.env.PELIAS_ACCEPT_LANGUAGE || "en").trim();
 
 const uploadMaxBytes = Number(process.env.UPLOAD_MAX_BYTES || 80 * 1024 * 1024);
 const verifyWebUpload = multer({
@@ -1071,6 +1074,80 @@ function pickPreferredTreeType(row) {
 
 const reverseGeocodeCache = new Map();
 
+async function resolveLocationSummaryWithPelias(gps) {
+  if (!PELIAS_API_BASE_URL) return null;
+  const lat = Number(gps?.lat);
+  const lng = Number(gps?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const response = await fetch(
+    `${PELIAS_API_BASE_URL}${PELIAS_REVERSE_PATH}` +
+      `?point.lat=${encodeURIComponent(lat)}` +
+      `&point.lon=${encodeURIComponent(lng)}` +
+      `&size=1&lang=${encodeURIComponent(PELIAS_ACCEPT_LANGUAGE)}`,
+    {
+      signal:
+        typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+          ? AbortSignal.timeout(2500)
+          : undefined,
+      headers: {
+        "User-Agent": "verity-server/1.0 (pelias-reverse-geocoding)",
+        Accept: "application/json",
+        "Accept-Language": PELIAS_ACCEPT_LANGUAGE,
+      },
+    }
+  );
+  if (!response.ok) return null;
+  const data = await response.json().catch(() => null);
+  const feature = Array.isArray(data?.features) ? data.features[0] : null;
+  const props =
+    feature?.properties && typeof feature.properties === "object"
+      ? feature.properties
+      : {};
+  const country = asString(props.country);
+  const region =
+    asString(props.region) ||
+    asString(props.macroregion) ||
+    asString(props.county) ||
+    asString(props.localadmin);
+  const locality =
+    asString(props.locality) ||
+    asString(props.localadmin) ||
+    asString(props.county);
+  return [country, region, locality].filter(Boolean).join(" · ") || asString(props.label) || null;
+}
+
+async function resolveLocationSummaryWithNominatim(gps) {
+  const lat = Number(gps?.lat);
+  const lng = Number(gps?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const response = await fetch(
+    `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=3&lat=${encodeURIComponent(
+      lat
+    )}&lon=${encodeURIComponent(lng)}&accept-language=ko,en`,
+    {
+      signal:
+        typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+          ? AbortSignal.timeout(2500)
+          : undefined,
+      headers: {
+        "User-Agent": "verity-server/1.0 (reverse-location-summary)",
+      },
+    }
+  );
+  if (!response.ok) return null;
+  const data = await response.json();
+  const address = data?.address && typeof data.address === "object" ? data.address : {};
+  const country = asString(address.country);
+  const region =
+    asString(address.state) ||
+    asString(address.region) ||
+    asString(address.province) ||
+    asString(address.state_district);
+  return [country, region].filter(Boolean).join(" · ") || asString(data?.display_name) || null;
+}
+
 async function resolveLocationSummary(gps) {
   const lat = Number(gps?.lat);
   const lng = Number(gps?.lng);
@@ -1080,33 +1157,9 @@ async function resolveLocationSummary(gps) {
   if (reverseGeocodeCache.has(key)) return reverseGeocodeCache.get(key);
 
   try {
-    const response = await fetch(
-      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=3&lat=${encodeURIComponent(
-        lat
-      )}&lon=${encodeURIComponent(lng)}&accept-language=ko,en`,
-      {
-        signal:
-          typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
-            ? AbortSignal.timeout(2500)
-            : undefined,
-        headers: {
-          "User-Agent": "verity-server/1.0 (reverse-location-summary)",
-        },
-      }
-    );
-    if (!response.ok) {
-      reverseGeocodeCache.set(key, null);
-      return null;
-    }
-    const data = await response.json();
-    const address = data?.address && typeof data.address === "object" ? data.address : {};
-    const country = asString(address.country);
-    const region =
-      asString(address.state) ||
-      asString(address.region) ||
-      asString(address.province) ||
-      asString(address.state_district);
-    const summary = [country, region].filter(Boolean).join(" · ") || asString(data?.display_name);
+    const summary =
+      (await resolveLocationSummaryWithPelias(gps)) ||
+      (await resolveLocationSummaryWithNominatim(gps));
     reverseGeocodeCache.set(key, summary || null);
     return summary || null;
   } catch {
@@ -1176,6 +1229,9 @@ async function toVerificationView(row, merkleCheck = null) {
     lng: row.gps_lng,
   };
   const locationSummary = await resolveLocationSummary(gps);
+  const gpsSource = extractGpsSource(row.metadata_json);
+  const cellDerivedGps = extractCellDerivedGps(row.metadata_json);
+  const radioEvidenceSummary = summarizeRadioEvidence(row.metadata_json);
   return {
     token: row.token,
     /** 머클 리프 직렬화(createAssetLeafHash)에 필요 — 브라우저가 서버 없이 리프 재계산 시 사용 */
@@ -1218,6 +1274,9 @@ async function toVerificationView(row, merkleCheck = null) {
         }
       : null,
     gps,
+    gpsSource,
+    cellDerivedGps,
+    radioEvidenceSummary,
     locationSummary,
     aiRiskScore: row.ai_risk_score,
     metadata: row.metadata_json,
@@ -1397,6 +1456,53 @@ function extractGps(metadata) {
   }
 
   return null;
+}
+
+function extractGpsSource(metadata) {
+  const m = metadata && typeof metadata === "object" ? metadata : {};
+  const declared = asString(m.gpsSource);
+  if (declared) return declared;
+  const lat = Number(m.gpsLat ?? m.gps?.lat);
+  const lng = Number(m.gpsLng ?? m.gps?.lng);
+  if (!Number.isNaN(lat) && !Number.isNaN(lng)) return "Stored GPS";
+  const fused = m.androidRadioRawSnapshot?.gnss?.fusedLocation;
+  if (
+    fused &&
+    typeof fused.latitude === "number" &&
+    typeof fused.longitude === "number"
+  ) {
+    return "Android fused location";
+  }
+  return null;
+}
+
+function extractCellDerivedGps(metadata) {
+  const m = metadata && typeof metadata === "object" ? metadata : {};
+  const centroid = m.serverOpencellidAnalysis?.centroid;
+  if (
+    centroid &&
+    typeof centroid.lat === "number" &&
+    typeof centroid.lng === "number"
+  ) {
+    return { lat: centroid.lat, lng: centroid.lng };
+  }
+  return null;
+}
+
+function summarizeRadioEvidence(metadata) {
+  const m = metadata && typeof metadata === "object" ? metadata : {};
+  const explicit = asString(m.radioEvidenceSummary);
+  if (explicit) return explicit;
+  const snap = m.androidRadioRawSnapshot;
+  if (!snap || typeof snap !== "object") return null;
+  const wifiCount = Array.isArray(snap.wifiScan) ? snap.wifiScan.length : 0;
+  const cellCount = Array.isArray(snap.cellScan) ? snap.cellScan.length : 0;
+  const bleCount = Array.isArray(snap.bleBeacons) ? snap.bleBeacons.length : 0;
+  const parts = [];
+  if (wifiCount > 0) parts.push(`Wi-Fi ${wifiCount}`);
+  if (cellCount > 0) parts.push(`Cells ${cellCount}`);
+  if (bleCount > 0) parts.push(`BLE ${bleCount}`);
+  return parts.length ? parts.join(" · ") : null;
 }
 
 function batchWindowBucketIso(tsMs) {

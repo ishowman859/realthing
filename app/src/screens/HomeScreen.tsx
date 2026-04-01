@@ -20,8 +20,8 @@ interface HomeScreenProps {
   ownerAddress: string;
   anchorStatus: AnchorMonitorState;
   onNavigateCamera: () => void;
-  onNavigateHistory: () => void;
   onNavigateVerify: () => void;
+  onNavigateHistory: () => void;
 }
 
 const cardShadow =
@@ -66,8 +66,8 @@ function ActionCard({
 export default function HomeScreen({
   anchorStatus,
   onNavigateCamera,
-  onNavigateHistory,
   onNavigateVerify,
+  onNavigateHistory,
 }: HomeScreenProps) {
   return (
     <SafeAreaView style={styles.container}>
@@ -84,7 +84,7 @@ export default function HomeScreen({
           </View>
           <Text style={styles.brand}>Verity</Text>
           <Text style={styles.tagline}>
-            Capture, anchor, and verify media with SHA-256, pHash, and Merkle proofs.
+            Capture media in-app, anchor it with SHA-256 and pHash, and verify it with Merkle proofs.
           </Text>
         </View>
 
@@ -118,9 +118,9 @@ export default function HomeScreen({
             onPress={onNavigateCamera}
           />
           <ActionCard
-            icon="shield-checkmark-outline"
+            icon="search"
             title="Verify"
-            description="Check an existing record with hashes, Merkle proof, and metadata."
+            description="Check a photo or video against registered hashes and metadata."
             onPress={onNavigateVerify}
           />
           <ActionCard

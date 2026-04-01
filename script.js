@@ -845,6 +845,9 @@ const el = {
   locationSummary: document.getElementById("locationSummary"),
   metadataSummary: document.getElementById("metadataSummary"),
   gpsVal: document.getElementById("gpsVal"),
+  gpsSourceVal: document.getElementById("gpsSourceVal"),
+  cellDerivedVal: document.getElementById("cellDerivedVal"),
+  radioEvidenceVal: document.getElementById("radioEvidenceVal"),
   metadataVal: document.getElementById("metadataVal"),
   statusBadge: document.getElementById("statusBadge"),
   mode: document.getElementById("mode"),
@@ -1303,24 +1306,45 @@ function bindMerkle() {
 
 async function searchVerificationByHashes(file) {
   setStatus("warn", t("fetchingVerification"));
+  const originalSha256 = await sha256HexBuffer(await file.arrayBuffer());
   const standardized = await standardizeBrowserImageForHashing(file);
-  const sha256 = await sha256HexBuffer(await standardized.blob.arrayBuffer());
+  const standardizedSha256 = await sha256HexBuffer(
+    await standardized.blob.arrayBuffer()
+  );
   let phash = null;
   try {
     phash = await computeBrowserImagePhash(standardized.blob);
   } catch (err) {
     console.warn("pHash compute failed; continuing with SHA-256 only", err);
   }
+  const first = await searchHashesRemote({
+    sha256: originalSha256,
+    phash,
+    mediaType: "photo",
+    fileName: standardized.fileName,
+    mimeType: standardized.mimeType,
+  });
+  const shouldRetryStandardized =
+    standardizedSha256 &&
+    standardizedSha256 !== originalSha256 &&
+    first?.exactMatchType !== "sha256";
+  if (!shouldRetryStandardized) {
+    return first;
+  }
+  return searchHashesRemote({
+    sha256: standardizedSha256,
+    phash,
+    mediaType: "photo",
+    fileName: standardized.fileName,
+    mimeType: standardized.mimeType,
+  });
+}
+
+async function searchHashesRemote(payload) {
   const res = await fetch(`${API_BASE}/v1/verify/search-hashes`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      sha256,
-      phash,
-      mediaType: "photo",
-      fileName: standardized.fileName,
-      mimeType: standardized.mimeType,
-    }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -1367,6 +1391,16 @@ function render(data) {
       Number.isFinite(lat) && Number.isFinite(lng)
         ? `${lat.toFixed(4)}, ${lng.toFixed(4)}`
         : "-";
+  }
+  if (el.gpsSourceVal) {
+    el.gpsSourceVal.textContent = data.gpsSource || extractGpsSource(data.metadata);
+  }
+  if (el.cellDerivedVal) {
+    el.cellDerivedVal.textContent = formatCellDerivedCoordinates(data);
+  }
+  if (el.radioEvidenceVal) {
+    el.radioEvidenceVal.textContent =
+      data.radioEvidenceSummary || summarizeRadioEvidence(data.metadata);
   }
   if (el.metadataVal) {
     el.metadataVal.textContent = data.metadata
@@ -1480,6 +1514,55 @@ async function main() {
   setStatus("warn", t("photoOrTokenHint"));
   renderSearchMeta(null);
   renderMerkleStub();
+}
+
+function extractGpsSource(metadata) {
+  if (!metadata || typeof metadata !== "object") return "-";
+  const declared = String(metadata.gpsSource || "").trim();
+  if (declared) return declared;
+  const hasStoredGps =
+    typeof metadata?.gps?.lat === "number" && typeof metadata?.gps?.lng === "number";
+  if (hasStoredGps) return "Stored GPS";
+  const fused = metadata?.androidRadioRawSnapshot?.gnss?.fusedLocation;
+  if (typeof fused?.latitude === "number" && typeof fused?.longitude === "number") {
+    return "Android fused location";
+  }
+  return "-";
+}
+
+function formatCellDerivedCoordinates(data) {
+  const lat = Number(data?.cellDerivedGps?.lat);
+  const lng = Number(data?.cellDerivedGps?.lng);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    return `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+  }
+  const centroid = data?.metadata?.serverOpencellidAnalysis?.centroid;
+  const cLat = Number(centroid?.lat);
+  const cLng = Number(centroid?.lng);
+  if (Number.isFinite(cLat) && Number.isFinite(cLng)) {
+    return `${cLat.toFixed(4)}, ${cLng.toFixed(4)}`;
+  }
+  return "-";
+}
+
+function summarizeRadioEvidence(metadata) {
+  if (!metadata || typeof metadata !== "object") return "-";
+  const explicit = String(metadata.radioEvidenceSummary || "").trim();
+  if (explicit) return explicit;
+  const wifi = Array.isArray(metadata?.androidRadioRawSnapshot?.wifiScan)
+    ? metadata.androidRadioRawSnapshot.wifiScan.length
+    : 0;
+  const cell = Array.isArray(metadata?.androidRadioRawSnapshot?.cellScan)
+    ? metadata.androidRadioRawSnapshot.cellScan.length
+    : 0;
+  const ble = Array.isArray(metadata?.androidRadioRawSnapshot?.bleBeacons)
+    ? metadata.androidRadioRawSnapshot.bleBeacons.length
+    : 0;
+  const parts = [];
+  if (wifi > 0) parts.push(`Wi-Fi ${wifi}`);
+  if (cell > 0) parts.push(`Cells ${cell}`);
+  if (ble > 0) parts.push(`BLE ${ble}`);
+  return parts.length ? parts.join(" · ") : "-";
 }
 
 main();

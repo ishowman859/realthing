@@ -9,7 +9,7 @@ import { useVerityHash } from "./src/hooks/useVerityHash";
 import { AppErrorBoundary } from "./src/AppErrorBoundary";
 import { resolveVerityOwnerAddress } from "./src/utils/verityOwner";
 
-type Screen = "home" | "camera" | "history" | "verify";
+type Screen = "home" | "camera" | "verify" | "history";
 
 export default function App() {
   return (
@@ -61,12 +61,7 @@ function AppInner() {
       );
 
     case "verify":
-      return (
-        <VerifyScreen
-          initialToken=""
-          onBack={() => setCurrentScreen("home")}
-        />
-      );
+      return <VerifyScreen onBack={() => setCurrentScreen("home")} />;
 
     default:
       return (
@@ -74,8 +69,8 @@ function AppInner() {
           ownerAddress={ownerAddress}
           anchorStatus={photoHash.anchorMonitor}
           onNavigateCamera={handleNavigateCamera}
-          onNavigateHistory={() => setCurrentScreen("history")}
           onNavigateVerify={() => setCurrentScreen("verify")}
+          onNavigateHistory={() => setCurrentScreen("history")}
         />
       );
   }
