@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
-  Share,
   Linking,
   InteractionManager,
   Platform,
@@ -21,10 +20,6 @@ import * as MediaLibrary from "expo-media-library";
 import * as FileSystem from "expo-file-system";
 import { Ionicons } from "@expo/vector-icons";
 import { RegistrationStatus } from "../hooks/useVerityHash";
-import {
-  FirstStageFilterResult,
-  runFirstStageFilter,
-} from "../utils/firstStageFilter";
 import { HashMode } from "../utils/verityApi";
 import {
   standardizePhotoForHashing,
@@ -46,7 +41,6 @@ const barShadow =
       }
     : { elevation: 1 };
 
-type ShareVariant = "original" | "proved";
 type CaptureMediaType = "photo" | "video";
 interface CaptureContext {
   captureTimestamp: number;
@@ -115,13 +109,7 @@ export default function CameraScreen({
   const [captureContext, setCaptureContext] = useState<CaptureContext | null>(null);
   const [facing, setFacing] = useState<"front" | "back">("back");
   const [cameraMode, setCameraMode] = useState<CameraMode>("picture");
-  const [filterResult, setFilterResult] = useState<FirstStageFilterResult | null>(
-    null
-  );
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [selectedShareVariant, setSelectedShareVariant] =
-    useState<ShareVariant>("proved");
   const [mediaLibraryGranted, setMediaLibraryGranted] = useState<boolean | null>(null);
   const [isRequestingLibraryPermission, setIsRequestingLibraryPermission] =
     useState(false);
@@ -245,9 +233,8 @@ export default function CameraScreen({
 
   useEffect(() => {
     if (!capturedUri || capturedMediaType !== "photo") return;
-    if (status !== "idle" || isAnalyzing) return;
+    if (status !== "idle") return;
     if (!captureContext) return;
-    if (filterResult?.decision === "reject") return;
 
     const autoKey = [
       capturedUri,
@@ -262,9 +249,7 @@ export default function CameraScreen({
     capturedUri,
     capturedMediaType,
     status,
-    isAnalyzing,
     captureContext,
-    filterResult,
   ]);
 
   if (!permission) {
@@ -324,23 +309,9 @@ export default function CameraScreen({
           gpsSource: exifGps ? "Photo EXIF GPS" : null,
           radioEnvironment: null,
         });
-        setFilterResult(null);
-        setIsAnalyzing(true);
         let radioEnvironment: RadioEnvironmentSnapshot | null = null;
         try {
-          const [result, snapshot] = await Promise.all([
-            runFirstStageFilter(photo.uri).catch(() => ({
-              decision: "warn" as const,
-              score: 40,
-              reasons: ["The first-pass filter failed, so a retake is recommended."],
-              metrics: {
-                blurVariance: 0,
-                periodicityScore: 0,
-                metadataRisk: 0,
-              },
-            })),
-            collectRadioEnvironmentSnapshotSafe(),
-          ]);
+          const snapshot = await collectRadioEnvironmentSnapshotSafe();
           radioEnvironment = snapshot;
           const fusedGps = extractGpsFromRadioEnvironment(snapshot);
           setCaptureContext({
@@ -354,18 +325,7 @@ export default function CameraScreen({
                 : null,
             radioEnvironment: snapshot,
           });
-          setFilterResult(result);
         } catch {
-          setFilterResult({
-            decision: "warn",
-            score: 40,
-            reasons: ["The first-pass filter failed, so a retake is recommended."],
-            metrics: {
-              blurVariance: 0,
-              periodicityScore: 0,
-              metadataRisk: 0,
-            },
-          });
           setCaptureContext({
             captureTimestamp,
             gps: exifGps ?? extractGpsFromRadioEnvironment(radioEnvironment),
@@ -377,8 +337,6 @@ export default function CameraScreen({
                 : null,
             radioEnvironment,
           });
-        } finally {
-          setIsAnalyzing(false);
         }
       }
     } catch (err) {
@@ -390,19 +348,12 @@ export default function CameraScreen({
     if (isRecording) return;
     setCameraMode(nextType === "video" ? "video" : "picture");
     setCapturedMediaType(nextType);
-    setFilterResult(null);
-    setIsAnalyzing(false);
-    if (nextType === "video") {
-      setSelectedShareVariant("original");
-    }
   };
 
   const startVideoRecording = async () => {
     if (!cameraRef.current || isRecording) return;
     try {
       setIsRecording(true);
-      setFilterResult(null);
-      setIsAnalyzing(false);
       const recorded = await cameraRef.current.recordAsync({
         maxDuration: 120,
       });
@@ -451,92 +402,8 @@ export default function CameraScreen({
       return;
     }
 
-    if (isAnalyzing) {
-      Alert.alert("Analyzing", "Wait until analysis finishes before registering.");
-      return;
-    }
-
-    if (filterResult?.decision === "reject") {
-      Alert.alert(
-        "Retake required",
-        "Strong warning signals were detected, so registration was blocked. Please retake the media."
-      );
-      return;
-    }
-
-    if (filterResult?.decision === "warn") {
-      if (options?.autoProceedWarn) {
-        lastRegisterAtRef.current = Date.now();
-        await onRegisterPhoto(
-          capturedUri,
-          mode,
-          filterResult?.score,
-          {
-            blurVariance: filterResult?.metrics.blurVariance ?? null,
-            periodicityScore: filterResult?.metrics.periodicityScore ?? null,
-            metadataRisk: filterResult?.metrics.metadataRisk ?? null,
-            captureMediaType: capturedMediaType,
-            captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
-            gps: captureContext?.gps ?? null,
-            gpsSource: captureContext?.gpsSource ?? null,
-            androidRadioRawSnapshot: captureContext?.radioEnvironment ?? null,
-            gnssDerivedLocation: toGnssDerivedLocation(
-              captureContext?.radioEnvironment ?? null
-            ),
-            radioEvidenceSummary: summarizeRadioEnvironment(
-              captureContext?.radioEnvironment ?? null
-            ),
-            standardizedPhoto: captureContext?.standardizedPhoto ?? null,
-          },
-          { mediaType: capturedMediaType }
-        );
-        return;
-      }
-      const message =
-        filterResult.reasons.length > 0
-          ? filterResult.reasons.join("\n")
-          : "Some warning signals were detected.";
-      Alert.alert("Warning", `${message}\n\nDo you still want to continue?`, [
-        { text: "Retake", style: "cancel" },
-        {
-          text: "Continue",
-          style: "default",
-          onPress: () => {
-            lastRegisterAtRef.current = Date.now();
-            void onRegisterPhoto(
-              capturedUri,
-              mode,
-              filterResult?.score,
-              {
-                blurVariance: filterResult?.metrics.blurVariance ?? null,
-                periodicityScore: filterResult?.metrics.periodicityScore ?? null,
-                metadataRisk: filterResult?.metrics.metadataRisk ?? null,
-                captureMediaType: capturedMediaType,
-                captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
-                gps: captureContext?.gps ?? null,
-                gpsSource: captureContext?.gpsSource ?? null,
-                androidRadioRawSnapshot: captureContext?.radioEnvironment ?? null,
-                gnssDerivedLocation: toGnssDerivedLocation(
-                  captureContext?.radioEnvironment ?? null
-                ),
-                radioEvidenceSummary: summarizeRadioEnvironment(
-                  captureContext?.radioEnvironment ?? null
-                ),
-                standardizedPhoto: captureContext?.standardizedPhoto ?? null,
-              },
-              { mediaType: capturedMediaType }
-            );
-          },
-        },
-      ]);
-      return;
-    }
-
     lastRegisterAtRef.current = Date.now();
-    await onRegisterPhoto(capturedUri, mode, filterResult?.score, {
-      blurVariance: filterResult?.metrics.blurVariance ?? null,
-      periodicityScore: filterResult?.metrics.periodicityScore ?? null,
-      metadataRisk: filterResult?.metrics.metadataRisk ?? null,
+    await onRegisterPhoto(capturedUri, mode, undefined, {
       captureMediaType: capturedMediaType,
       captureTimestamp: captureContext?.captureTimestamp ?? Date.now(),
       gps: captureContext?.gps ?? null,
@@ -556,10 +423,7 @@ export default function CameraScreen({
     lastLibrarySaveKeyRef.current = null;
     lastAutoRegisterKeyRef.current = null;
     setCapturedUri(null);
-    setFilterResult(null);
-    setIsAnalyzing(false);
     setCaptureContext(null);
-    setSelectedShareVariant("proved");
     setCapturedMediaType(cameraMode === "video" ? "video" : "photo");
     setLibrarySaveState("idle");
     setLibrarySaveMessage(null);
@@ -574,19 +438,12 @@ export default function CameraScreen({
 
   const handleShare = async () => {
     if (!verificationUrl) return;
-    await Share.share({
-        message: `proved by verity\nSelected share style: ${
-          selectedShareVariant === "proved" ? "proved frame" : "standard JPG"
-        }\nverification link: ${verificationUrl}`,
-    });
+    await Linking.openURL(verificationUrl);
   };
 
   const handleShareQr = async () => {
     if (!qrCodeUrl) return;
-    await Share.share({
-      message: `Verity verification QR\n${verificationUrl ?? ""}\n${qrCodeUrl}`,
-      url: qrCodeUrl,
-    });
+    await Linking.openURL(qrCodeUrl);
   };
 
   const isPhotoCapture = capturedMediaType === "photo";
@@ -609,47 +466,7 @@ export default function CameraScreen({
           bounces={false}
         >
           {isPhotoCapture ? (
-            <>
-              <View style={styles.variantSelector}>
-                <TouchableOpacity
-                  style={[
-                    styles.variantCard,
-                    selectedShareVariant === "original" && styles.variantCardActive,
-                  ]}
-                  onPress={() => setSelectedShareVariant("original")}
-                >
-                  <Image source={{ uri: capturedUri }} style={styles.variantThumb} />
-                  <Text style={styles.variantLabel}>Standard JPG</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.variantCard,
-                    selectedShareVariant === "proved" && styles.variantCardActive,
-                  ]}
-                  onPress={() => setSelectedShareVariant("proved")}
-                >
-                  <View style={styles.variantThumbProved}>
-                    <Image source={{ uri: capturedUri }} style={styles.variantThumb} />
-                    <View style={styles.provedBadge}>
-                      <Text style={styles.provedBadgeText}>PROVED BY VERITY</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.variantLabel}>Proved frame</Text>
-                </TouchableOpacity>
-              </View>
-
-              {selectedShareVariant === "original" ? (
-                <Image source={{ uri: capturedUri }} style={styles.previewImage} />
-              ) : (
-                <View style={styles.previewProvedContainer}>
-                  <Image source={{ uri: capturedUri }} style={styles.previewImage} />
-                  <View style={styles.previewFrame}>
-                    <Text style={styles.previewFrameText}>PROVED BY VERITY</Text>
-                  </View>
-                </View>
-              )}
-            </>
+            <Image source={{ uri: capturedUri }} style={styles.previewImage} />
           ) : (
             <View style={styles.videoPreviewCard}>
               <Ionicons name="videocam" size={36} color={ui.primary} />
@@ -663,45 +480,6 @@ export default function CameraScreen({
               <View style={styles.videoPill}>
                 <Text style={styles.videoPillText}>VIDEO</Text>
               </View>
-            </View>
-          )}
-
-          {isAnalyzing && (
-            <View style={styles.filterCard}>
-              <ActivityIndicator size="small" color={ui.primary} />
-              <Text style={styles.filterCardTitle}>Running first-pass checks...</Text>
-              <Text style={styles.filterCardDesc}>
-                Checking blur, repeating patterns, and metadata before registration.
-              </Text>
-            </View>
-          )}
-
-          {!isAnalyzing && filterResult && (
-            <View
-              style={[
-                styles.filterCard,
-                filterResult.decision === "pass"
-                  ? styles.filterPass
-                  : filterResult.decision === "warn"
-                  ? styles.filterWarn
-                  : styles.filterReject,
-              ]}
-            >
-              <Text style={styles.filterCardTitle}>
-                First-pass score: {filterResult.score}/100
-              </Text>
-              <Text style={styles.filterCardDesc}>
-                {filterResult.decision === "pass"
-                  ? "No major warning signals were detected."
-                  : filterResult.decision === "warn"
-                  ? "Some warning signals were detected. A retake is recommended."
-                  : "Strong warning signals were detected. Registration is blocked."}
-              </Text>
-              {filterResult.reasons.slice(0, 2).map((reason) => (
-                <Text key={reason} style={styles.filterReason}>
-                  • {reason}
-                </Text>
-              ))}
             </View>
           )}
 
@@ -913,12 +691,8 @@ export default function CameraScreen({
 
                 {!!verificationUrl && (
                   <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
-                    <Ionicons name="share-social" size={18} color={ui.primary} />
-                    <Text style={styles.shareButtonText}>
-                      {selectedShareVariant === "proved"
-                        ? "Share proved version"
-                        : "Share standard JPG"}
-                    </Text>
+                    <Ionicons name="open-outline" size={18} color={ui.primary} />
+                    <Text style={styles.shareButtonText}>Open verification link</Text>
                   </TouchableOpacity>
                 )}
               </>
@@ -1245,78 +1019,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     marginBottom: 20,
   },
-  variantSelector: {
-    width: "100%",
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 12,
-  },
-  variantCard: {
-    flex: 1,
-    backgroundColor: ui.surface,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: ui.borderLight,
-    padding: 8,
-  },
-  variantCardActive: {
-    borderColor: ui.primary,
-    backgroundColor: ui.primarySoft,
-  },
-  variantThumb: {
-    width: "100%",
-    aspectRatio: 1,
-    borderRadius: 8,
-  },
-  variantThumbProved: {
-    borderWidth: 2,
-    borderColor: ui.text,
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-  variantLabel: {
-    color: ui.text,
-    fontSize: 12,
-    marginTop: 6,
-    textAlign: "center",
-    fontWeight: "700",
-  },
-  provedBadge: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: ui.text,
-    paddingVertical: 3,
-    paddingHorizontal: 4,
-  },
-  provedBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 9,
-    fontWeight: "800",
-    textAlign: "center",
-    letterSpacing: 0.3,
-  },
-  previewProvedContainer: {
-    width: "100%",
-    position: "relative",
-    marginBottom: 20,
-  },
-  previewFrame: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 20,
-    backgroundColor: ui.text,
-    paddingVertical: 8,
-  },
-  previewFrameText: {
-    textAlign: "center",
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
   statusContainer: {
     backgroundColor: ui.surface,
     borderRadius: 18,
@@ -1326,45 +1028,6 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     borderWidth: 1,
     borderColor: ui.borderLight,
-  },
-  filterCard: {
-    width: "100%",
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 14,
-    backgroundColor: ui.surface,
-    borderWidth: 1,
-    borderColor: ui.borderLight,
-  },
-  filterPass: {
-    borderColor: ui.success,
-    backgroundColor: ui.successSoft,
-  },
-  filterWarn: {
-    borderColor: ui.warning,
-    backgroundColor: ui.warningSoft,
-  },
-  filterReject: {
-    borderColor: ui.danger,
-    backgroundColor: ui.dangerSoft,
-  },
-  filterCardTitle: {
-    color: ui.text,
-    fontSize: 16,
-    fontWeight: "700",
-    marginTop: 6,
-  },
-  filterCardDesc: {
-    color: ui.textSecondary,
-    fontSize: 14,
-    marginTop: 6,
-    lineHeight: 20,
-  },
-  filterReason: {
-    color: ui.text,
-    fontSize: 13,
-    marginTop: 4,
-    lineHeight: 20,
   },
   statusText: {
     color: ui.text,
