@@ -107,6 +107,7 @@ export default function CameraScreen({
   const [capturedMediaType, setCapturedMediaType] =
     useState<CaptureMediaType>("photo");
   const [captureContext, setCaptureContext] = useState<CaptureContext | null>(null);
+  const [isPreparingPhoto, setIsPreparingPhoto] = useState(false);
   const [facing, setFacing] = useState<"front" | "back">("back");
   const [cameraMode, setCameraMode] = useState<CameraMode>("picture");
   const [isRecording, setIsRecording] = useState(false);
@@ -115,6 +116,8 @@ export default function CameraScreen({
     useState(false);
   const [librarySaveState, setLibrarySaveState] = useState<LibrarySaveState>("idle");
   const [librarySaveMessage, setLibrarySaveMessage] = useState<string | null>(null);
+  const [radioPermissionsGranted, setRadioPermissionsGranted] =
+    useState<boolean | null>(null);
 
   const requestMediaLibraryPermission = async () => {
     try {
@@ -164,6 +167,97 @@ export default function CameraScreen({
       cancelled = true;
     };
   }, [capturedUri]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!permission?.granted || Platform.OS !== "android") {
+      return;
+    }
+
+    (async () => {
+      const granted = await requestRadioEnvironmentPermissions();
+      if (!cancelled) {
+        setRadioPermissionsGranted(granted);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [permission?.granted]);
+
+  useEffect(() => {
+    if (!capturedUri || capturedMediaType !== "photo") return;
+    if (!captureContext || captureContext.standardizedPhoto) return;
+
+    let cancelled = false;
+
+    const preparePhoto = async () => {
+      setIsPreparingPhoto(true);
+
+      try {
+        await new Promise<void>((resolve) => {
+          InteractionManager.runAfterInteractions(() => resolve());
+        });
+
+        const standardizedPhoto = await standardizePhotoForHashing({
+          uri: capturedUri,
+        });
+        const persistedStandardizedUri = await persistRegisteredPhotoUri(
+          standardizedPhoto.uri
+        );
+        if (cancelled) return;
+
+        setCapturedUri(persistedStandardizedUri);
+        setCaptureContext((prev) =>
+          prev
+            ? {
+                ...prev,
+                standardizedPhoto: standardizedPhoto.meta,
+              }
+            : prev
+        );
+
+        const radioEnvironment = await collectRadioEnvironmentSnapshotSafe(
+          radioPermissionsGranted === true
+        );
+        if (cancelled) return;
+
+        const fusedGps = extractGpsFromRadioEnvironment(radioEnvironment);
+        setCaptureContext((prev) =>
+          prev
+            ? {
+                ...prev,
+                gps: prev.gps ?? fusedGps,
+                gpsSource: prev.gpsSource
+                  ? prev.gpsSource
+                  : fusedGps
+                    ? "Android fused location"
+                    : null,
+                radioEnvironment,
+              }
+            : prev
+        );
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("prepareCapturedPhoto", err);
+          Alert.alert("Error", "Photo preparation failed.");
+          handleRetake();
+        }
+      } finally {
+        if (!cancelled) {
+          setIsPreparingPhoto(false);
+        }
+      }
+    };
+
+    void preparePhoto();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [capturedUri, capturedMediaType, captureContext, radioPermissionsGranted]);
 
   const saveCurrentMediaToLibrary = async (requestIfNeeded = false) => {
     if (!capturedUri || status !== "success") return;
@@ -235,6 +329,8 @@ export default function CameraScreen({
     if (!capturedUri || capturedMediaType !== "photo") return;
     if (status !== "idle") return;
     if (!captureContext) return;
+    if (!captureContext.standardizedPhoto) return;
+    if (isPreparingPhoto) return;
 
     const autoKey = [
       capturedUri,
@@ -250,6 +346,7 @@ export default function CameraScreen({
     capturedMediaType,
     status,
     captureContext,
+    isPreparingPhoto,
   ]);
 
   if (!permission) {
@@ -291,56 +388,21 @@ export default function CameraScreen({
         quality: 0.8,
         base64: false,
         exif: true,
+        skipProcessing: true,
       });
 
       if (photo?.uri) {
-        const standardizedPhoto = await standardizePhotoForHashing({
-          uri: photo.uri,
-          width: photo.width,
-          height: photo.height,
-        });
-        const persistedStandardizedUri = await persistRegisteredPhotoUri(
-          standardizedPhoto.uri
-        );
         const captureTimestamp = Date.now();
         const exifGps = extractGpsFromExif(photo.exif);
-        setCapturedUri(persistedStandardizedUri);
+        setCapturedUri(photo.uri);
+        setCapturedMediaType("photo");
         setCaptureContext({
           captureTimestamp,
           gps: exifGps,
-          standardizedPhoto: standardizedPhoto.meta,
+          standardizedPhoto: null,
           gpsSource: exifGps ? "Photo EXIF GPS" : null,
           radioEnvironment: null,
         });
-        let radioEnvironment: RadioEnvironmentSnapshot | null = null;
-        try {
-          const snapshot = await collectRadioEnvironmentSnapshotSafe();
-          radioEnvironment = snapshot;
-          const fusedGps = extractGpsFromRadioEnvironment(snapshot);
-          setCaptureContext({
-            captureTimestamp,
-            gps: exifGps ?? fusedGps,
-            standardizedPhoto: standardizedPhoto.meta,
-            gpsSource: exifGps
-              ? "Photo EXIF GPS"
-              : fusedGps
-                ? "Android fused location"
-                : null,
-            radioEnvironment: snapshot,
-          });
-        } catch {
-          setCaptureContext({
-            captureTimestamp,
-            gps: exifGps ?? extractGpsFromRadioEnvironment(radioEnvironment),
-            standardizedPhoto: standardizedPhoto.meta,
-            gpsSource: exifGps
-              ? "Photo EXIF GPS"
-              : extractGpsFromRadioEnvironment(radioEnvironment)
-                ? "Android fused location"
-                : null,
-            radioEnvironment,
-          });
-        }
       }
     } catch (err) {
       Alert.alert("Error", "Photo capture failed.");
@@ -425,6 +487,7 @@ export default function CameraScreen({
   const handleRetake = () => {
     lastLibrarySaveKeyRef.current = null;
     lastAutoRegisterKeyRef.current = null;
+    setIsPreparingPhoto(false);
     setCapturedUri(null);
     setCaptureContext(null);
     setCapturedMediaType(cameraMode === "video" ? "video" : "photo");
@@ -434,6 +497,7 @@ export default function CameraScreen({
   };
 
   const isProcessing =
+    isPreparingPhoto ||
     status === "computing_hash" ||
     status === "building_tx" ||
     status === "awaiting_signature" ||
@@ -488,10 +552,21 @@ export default function CameraScreen({
 
           {status === "idle" && isPhotoCapture && (
             <View style={styles.libraryCard}>
-              <Text style={styles.libraryCardTitle}>Auto registration</Text>
-              <Text style={styles.libraryCardDesc}>
-                Photos are standardized to JPG and registered automatically right after capture.
+              <Text style={styles.libraryCardTitle}>
+                {isPreparingPhoto ? "Preparing photo" : "Auto registration"}
               </Text>
+              <Text style={styles.libraryCardDesc}>
+                {isPreparingPhoto
+                  ? "Stabilizing the capture, standardizing the JPG, and gathering optional device evidence."
+                  : "Photos are standardized to JPG and registered automatically right after capture."}
+              </Text>
+              {isPreparingPhoto ? (
+                <ActivityIndicator
+                  size="small"
+                  color={ui.primary}
+                  style={{ marginTop: 12 }}
+                />
+              ) : null}
             </View>
           )}
 
@@ -1279,10 +1354,11 @@ function extractGpsFromExif(exif: any): { lat: number; lng: number } | null {
   return { lat, lng };
 }
 
-async function collectRadioEnvironmentSnapshotSafe(): Promise<RadioEnvironmentSnapshot | null> {
+async function collectRadioEnvironmentSnapshotSafe(
+  permissionsGranted: boolean
+): Promise<RadioEnvironmentSnapshot | null> {
   if (Platform.OS !== "android") return null;
-  const granted = await requestRadioEnvironmentPermissions();
-  if (!granted) return null;
+  if (!permissionsGranted) return null;
   try {
     return await getRadioEnvironmentSnapshot(2500);
   } catch (error) {
@@ -1293,25 +1369,61 @@ async function collectRadioEnvironmentSnapshotSafe(): Promise<RadioEnvironmentSn
 
 async function requestRadioEnvironmentPermissions(): Promise<boolean> {
   if (Platform.OS !== "android") return true;
-  const needs = [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+  const requiredPermissions: string[] = [];
+
+  if (
+    !(await PermissionsAndroid.check(
+      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+    ))
+  ) {
+    requiredPermissions.push(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
+  }
+
   if (PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION) {
-    needs.push(PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION);
+    if (
+      !(await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION
+      ))
+    ) {
+      requiredPermissions.push(PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION);
+    }
   }
   if (PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE) {
-    needs.push(PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE);
+    if (
+      !(await PermissionsAndroid.check(
+        PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE
+      ))
+    ) {
+      requiredPermissions.push(PermissionsAndroid.PERMISSIONS.READ_PHONE_STATE);
+    }
   }
   if (Platform.Version >= 31) {
     if (PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN) {
-      needs.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN);
+      if (
+        !(await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN
+        ))
+      ) {
+        requiredPermissions.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN);
+      }
     }
     if (PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT) {
-      needs.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
+      if (
+        !(await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT
+        ))
+      ) {
+        requiredPermissions.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
+      }
     }
   }
+  if (requiredPermissions.length === 0) {
+    return true;
+  }
   const result = (await PermissionsAndroid.requestMultiple(
-    needs as any
+    requiredPermissions as any
   )) as Record<string, string>;
-  return needs.every(
+  return requiredPermissions.every(
     (permission) => result[permission] === PermissionsAndroid.RESULTS.GRANTED
   );
 }
